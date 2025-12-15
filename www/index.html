@@ -36,6 +36,10 @@
 				resize: none;
 			}
 
+			.code-fonts {
+				color: #333;
+			}
+
 			.code-operator, .code-digits, .code-period, .code-escapedStringText {
 				font-weight:bold;
 			}
@@ -45,7 +49,7 @@
 			}
 			.code-comment {
 				font-style: italic;
-				color: #333;
+				color: black;
 			}
 			.code-quote, .code-stringText {
 				font-style: italic;
@@ -54,7 +58,8 @@
 		<script type="text/javascript" src='/duet.js'></script>
 		<script type="text/javascript">
 			Duet.loadObject('/duet/game.duet').then(() => {
-				Duet.loadObject('/duet/player.duet').then(Duet.compile);
+				Duet.switchTo('/duet/game.duet');
+				Duet.loadObject('/duet/player.duet');
 			});
 		</script>
 	</head>

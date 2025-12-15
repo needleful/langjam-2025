@@ -40,9 +40,9 @@ const Duet = {
 			type:"Beats Me",
 			path: path,
 			text: await response.text()
-		});
+		}, false);
 	},
-	addObject: (id, info) => {
+	addObject: (id, info, p_switch = true) => {
 		if(id in Duet.files) {
 			console.error('Duplicate file name: ', id);
 			return;
@@ -55,7 +55,9 @@ const Duet = {
 		button.addEventListener('click', () => {Duet.switchTo(id)});
 		info.element = button;
 		Duet.files[id] = info;
-		Duet.switchTo(id);
+		if(p_switch) {
+			Duet.switchTo(id);
+		}
 	},
 	removeObject: (name) => {
 		if(name in Duet.files) {
@@ -179,7 +181,7 @@ const Duet = {
 		const r_ident = /^\p{Alpha}[\p{Alpha}\d_]*/u;
 		const r_digits = /^\d(_?\d)*/;
 		const r_exp = /^[eE][+\-]/;
-		const r_comment = /^\#.*$/;
+		const r_comment = /^\#.*(\n|$)/;
 		const r_newline = /^(\s+[\n\r])+/;
 		const r_indent = /^\t+/;
 		// For now, just single-character escapes

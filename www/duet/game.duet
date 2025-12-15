@@ -1,7 +1,4 @@
 program game
 
-player = new(player)
-frame = frame.count
-
-frame
-	printnumber('frame', frame)
+platform.frame
+	printnumber('current frame: ', platform.frame)
