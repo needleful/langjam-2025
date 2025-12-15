@@ -1,0 +1,32 @@
+# Langjam Gamejam
+&a
++
+_
+m3
+- The Game Design
+	p1
+	i1
+	- Summary
+		p1
+		i3
+	- Hypothetical program
+		p1
+		i4
+- The Language
+	p1
+	i2
+	- Lexer
+		p1
+		i5
+	- Editor
+		p1
+		i6
+	- Parser
+		p1
+		i7
+	- Compiler
+		p1
+		i8
+	- The VM
+		p1
+		i9
