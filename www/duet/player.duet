@@ -1,0 +1,7 @@
+entity player
+
+speed = 10.0
+movement = [keyboard.right - keyboard.left, keyboard.up - keyboard.down]
+position = [0, 0]; position + movement * speed * frame.time
+sprite = file.loadsprite('assets/player.png')
+sprite.position = position
