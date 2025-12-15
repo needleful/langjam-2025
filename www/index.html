@@ -35,73 +35,24 @@
 				caret-color: black;
 				resize: none;
 			}
-		</style>
-		<script type="text/javascript">
-			const Duet = {
-				// A dictionary
-				// name of object/file -> {path:String, text:String, type:String, element:Element}
-				files: {},
-				activeFile: undefined,
-				switchTo: (name) => {
-					if(Duet.activeFile in Duet.files) {
-						Duet.files[Duet.activeFile].text = editor.text.value;
-					}
-					if(name in Duet.files) {
-						Duet.activeFile = name;
-						document.getElementById('current-file').innerText = name;
-						editor.setContent(Duet.files[name].text);
-						highlight();
-					}
-					else{
-						console.error('DUET: could not switch to file: ', name);
-					}
-				},
-				loadObject: async (path) => {
-					const response = await fetch(path);
-					if(!response.ok) {
-						console.error('DUET: could not load file: ', path);
-						return;
-					}
-					console.log('DUET: loading ', path);
-					let item = makeChild(
-						document.getElementById('files-list'),
-						'li', {class: 'files-list-item'});
-					let button = makeChild(item, 'button');
-					let id = path;
-					button.innerText = path;
-					button.addEventListener('click', () => {Duet.switchTo(id)});
-					Duet.files[id] = {
-						type:"Beats Me",
-						path: path,
-						text: await response.text(),
-						element: button
-					};
-					Duet.switchTo(id);
-				},
-				removeObject: (name) => {
-					if(name in Duet.files) {
-						Duet.files[name].element.remove();
-						delete Duet.files[name];
-						console.log('DUET: removed: ', name);
-					}
-					else {
-						console.warn('DUET: No such object: ', name);
-					}
-				},
-				compile: () => {
-					console.log('DUET: Definitely compiling!!');
-				}
-			};
-			function makeChild(parent, tag, attributes) {
-				let item = document.createElement(tag);
-				parent.appendChild(item);
-				if (attributes) {
-					Object.keys(attributes).map(function(key) {
-						item.setAttribute(key, attributes[key]);
-					});
-				}
-				return item;
+
+			.code-operator, .code-digits, .code-period, .code-escapedStringText {
+				font-weight:bold;
 			}
+			.code-invalid {
+				text-decoration: wavy underline;
+				color: red;
+			}
+			.code-comment {
+				font-style: italic;
+				color: #333;
+			}
+			.code-quote, .code-stringText {
+				font-style: italic;
+			}
+		</style>
+		<script type="text/javascript" src='/duet.js'></script>
+		<script type="text/javascript">
 			Duet.loadObject('/duet/game.duet').then(() => {
 				Duet.loadObject('/duet/player.duet').then(Duet.compile);
 			});
@@ -118,7 +69,7 @@
 				<div id='editor-root'>
 					<textarea id="editor-text" class='code-container' rows="20" 
 						aria-hint="The keyboard can be captured by the text editor. Press escape to toggle this behavior." spellcheck="false"
-						oninput="highlight()" onscroll="sync_scroll()">#Type code here</textarea>
+						oninput="Duet.lex(false)" onscroll="sync_scroll()">#Type code here</textarea>
 					<pre id="highlighting" class='code-container' aria-hidden="true" tabindex='-1'><code id="highlighting-content" class='code-fonts'></code></pre>
 				</div>
 				<br></br>
@@ -127,11 +78,11 @@
 			</div>
 			<div id='file-panel'>
 				<h3>Files</h3>
-				<input type='text' value='newFile.duet'/>
+				<input id='new-file-name' type='text' value='newFile.duet'/>
 				<ul id='files-list'>
 					
 				</ul>
-				<button>Create File</button>
+				<button onclick='Duet.createFile()'>Create File</button>
 			</div>
 		</div>
 		<script type="text/javascript" src="/editor.js"></script>

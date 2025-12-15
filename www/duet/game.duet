@@ -1,3 +1,7 @@
 program game
 
-player = player
+player = new(player)
+frame = frame.count
+
+frame
+	printnumber('frame', frame)

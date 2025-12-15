@@ -127,11 +127,3 @@ function sync_scroll() {
 	highlight.scrollTop = editor.text.scrollTop;
 	highlight.scrollLeft = editor.text.scrollLeft;
 }
-
-function highlight() {
-	let text = editor.text.value;
-	let view = document.getElementById("highlighting-content");
-	view.innerText = text;
-}
-
-highlight();
