@@ -20,9 +20,18 @@ const Duet = {
 		Duet.updateText();
 		if(name in Duet.files) {
 			Duet.activeFile = name;
+			var file = Duet.files[name];
 			document.getElementById('current-file').innerText = name;
-			editor.setContent(Duet.files[name].text);
-			Duet.lex(false);
+			editor.setContent(file.text);
+			if(file.tokens) {
+				Duet.highlight();
+			}
+			else {
+				Duet.lex(false);
+			}
+			if(file.parseTree) {
+				Duet.showParseResults();
+			}
 		}
 		else{
 			console.error('DUET: could not switch to file: ', name);
@@ -88,6 +97,17 @@ const Duet = {
 		}
 		Duet.highlight();
 	},
+	parse_all() {
+		for(f in Duet.files) {
+			Duet.files[f].parseTree = Duet.parse(Duet.files[f]);
+		}
+		Duet.showParseResults();
+	},
+	compile: () => {
+		console.log('DUET: Definitely compiling!!');
+		Duet.lex();
+		Duet.parse_all();
+	},
 	highlight:() => {
 		function span(parent, text, style) {
 			let elem = document.createElement("span");
@@ -112,21 +132,33 @@ const Duet = {
 		let view = document.getElementById("highlighting-content");
 		view.innerText = '';
 		let c = 0;
-		for(let tk of Duet.files[Duet.activeFile].tokens) {
+		for(let token of Duet.files[Duet.activeFile].tokens) {
 			// Text BETWEEN tokens, basically just spaces.
-			if(tk.start > c) {
-				span(view, text.substr(c, tk.start - c));
+			if(token.start > c) {
+				span(view, text.substr(c, token.start - c));
 			}
-			tk.span = span(view,
-				text.substr(tk.start, tk.length),
-				'code-'+Duet.TokenNames[tk.type]);
-			c = tk.start + tk.length;
+			token.span = span(view,
+				text.substr(token.start, token.length),
+				'code-'+Duet.TokenNames[token.type]);
+			c = token.start + token.length;
 		}
 		sync_scroll();
 	},
-	compile: () => {
-		console.log('DUET: Definitely compiling!!');
-		Duet.lex();
+	showParseResults:() => {
+		var f = Duet.files[Duet.activeFile];
+		var result = f.parseTree;
+		var tokens = f.tokens;
+		function processTree(t) {
+			for(let node of t) {
+				for(let i = node.start; i < node.start+node.length;i++) {
+					tokens[i].span.classList.add('code-'+Duet.ParseNodeNames[node.type]);
+				}
+			}
+		}
+		processTree(result.tree);
+		for(let err of result.errors) {
+			//console.error('Parsing error: ', err.message);
+		}
 	},
 	createFile:() => {
 		var name = document.getElementById('new-file-name').value;
@@ -182,7 +214,7 @@ const Duet = {
 		const r_digits = /^\d(_?\d)*/;
 		const r_exp = /^[eE][+\-]/;
 		const r_comment = /^\#.*(\n|$)/;
-		const r_newline = /^(\s+[\n\r])+/;
+		const r_newline = /^(\s*[\n\r])+/;
 		const r_indent = /^\t+/;
 		// For now, just single-character escapes
 		const r_escaped = /^\\./;
@@ -270,13 +302,117 @@ const Duet = {
 			}
 			else {
 				addToken(Duet.Token.invalid, 1);
+				console.error('Invalid token: ', text.substr(c, 5));
 			}
 		}
 
 		return tokens;
-	}
+	},
+	ParseNode: {
+		error:0,
+		header:1
+	},
+	ParseNodeNames: {},
+	parse: (file)=> {
+		const opPrecedence = {
+			primary:0,
+			'*':2, '/':2, '%':2, '^':1,
+			'+':3, '-':3,
+			'<':4, '<=':4, '>=':4, '>':4, '==':4, '!=':4,
+			'~':5, '&':6, '|':7, '->':8
+		};
+
+		let tk = 0;
+		let root = [];
+		let tree = root;
+		let errors = [];
+		let tokens = file.tokens;
+		let lowText = file.text.toLowerCase();
+
+		function isGood() {
+			return tk < tokens.length;
+		}
+
+		function peek() {
+			return tokens[tk];
+		}
+
+		function tkText(token) {
+			return lowText.substr(token.start, token.length);
+		}
+
+		function addNode(type, length) {
+			var t = {
+				type: type,
+				start:tk,
+				length: length
+			};
+			tree.push(t);
+			tk += length;
+			return t;
+		}
+
+		function parseError(text) {
+			errors.push({start: tk, message: text});
+			addNode(Duet.ParseNode.error, 1);
+		}
+
+		function header() {
+			let token = peek();
+			if(token.type != Duet.Token.ident) {
+				return false;
+			}
+			let type = tkText(token);
+			if(type != 'program' && type != 'entity') {
+				return false;
+			}
+			let headNode = addNode(Duet.ParseNode.header, 1);
+			if(!isGood()) {
+				parseError('header ended early');
+				return false;
+			}
+			let nToken = peek();
+			if(nToken.type != Duet.Token.ident) {
+				parseError(`Expected a name after header type [${type}]`);
+				return false;
+			}
+			let name = tkText(nToken);
+			tk += 1;
+			headNode.length += 1;
+			return true;
+		}
+
+		function skipNewlines() {
+			while(isGood() && tokens[tk].type == Duet.Token.newline) {
+				tk++;
+			}
+		}
+
+		function grab(fn, skipComments = true) {
+			if(skipComments) {
+				while(isGood() && tokens[tk].type == Duet.Token.comment) {
+					tk ++;
+					skipNewlines();
+				}
+			}
+			return isGood() && fn();
+		}
+
+		skipNewlines();
+		if(!grab(header)) {
+			parseError('expected the program to start with either [program] or [entity] and a name');
+		}
+
+		while(isGood()) {
+			parseError('not implemented lol');
+		}
+		return {tree: root, errors: errors};
+	},
 };
 
 for(let k in Duet.Token) {
 	Duet.TokenNames[Duet.Token[k]] = k;
+}
+for(let k in Duet.ParseNode) {
+	Duet.ParseNodeNames[Duet.ParseNode[k]] = k;
 }

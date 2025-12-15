@@ -5,3 +5,9 @@ movement = [keyboard.right - keyboard.left, keyboard.up - keyboard.down]
 position = [0, 0]; position + movement * speed * frame.time
 sprite = file.loadsprite('assets/player.png')
 sprite.position = position
+
+movement == [0,0]
+	print('Not moving!')
+
+movement
+	printvector('movement:', movement)

@@ -30,3 +30,9 @@ m3
 	- The VM
 		p1
 		i9
+- Editor Bugs
+	p1
+	i10
+	- Switching to and from files messes up the parser classes
+		p1
+		i11
