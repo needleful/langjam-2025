@@ -151,13 +151,19 @@ const Duet = {
 		function processTree(t) {
 			for(let node of t) {
 				for(let i = node.start; i < node.start+node.length;i++) {
+					if(!(i in tokens)) {
+						continue;
+					}
 					tokens[i].span.classList.add('code-'+Duet.ParseNodeNames[node.type]);
+				}
+				if('children' in node) {
+					processTree(node.children);
 				}
 			}
 		}
 		processTree(result.tree);
 		for(let err of result.errors) {
-			//console.error('Parsing error: ', err.message);
+			console.error('Parsing error: ', err.message, 'at token: ', err.start);
 		}
 	},
 	createFile:() => {
@@ -291,7 +297,7 @@ const Duet = {
 			|| grabString(Duet.Token.bracketStart, '[')
 			|| grabString(Duet.Token.bracketEnd, ']')
 			|| grabString(Duet.Token.parenStart, '(')
-			|| grabString(Duet.Token.parentEnd, ')')
+			|| grabString(Duet.Token.parenEnd, ')')
 			|| grabString(Duet.Token.comma, ',')
 			|| grabString(Duet.Token.period, '.')
 			|| grabString(Duet.Token.semicolon, ';')
@@ -310,7 +316,8 @@ const Duet = {
 	},
 	ParseNode: {
 		error:0,
-		header:1
+		header:1,
+		binding:2
 	},
 	ParseNodeNames: {},
 	parse: (file)=> {
@@ -352,9 +359,15 @@ const Duet = {
 			return t;
 		}
 
-		function parseError(text) {
+		function grow(node, amount = 1) {
+			node.length += amount;
+			tk += amount;
+		}
+
+		function parseError(text, length = 1) {
 			errors.push({start: tk, message: text});
-			addNode(Duet.ParseNode.error, 1);
+			addNode(Duet.ParseNode.error, length);
+			return false;
 		}
 
 		function header() {
@@ -368,18 +381,55 @@ const Duet = {
 			}
 			let headNode = addNode(Duet.ParseNode.header, 1);
 			if(!isGood()) {
-				parseError('header ended early');
-				return false;
+				return parseError('header ended early');
 			}
 			let nToken = peek();
 			if(nToken.type != Duet.Token.ident) {
-				parseError(`Expected a name after header type [${type}]`);
-				return false;
+				return parseError(`Expected a name after header type [${type}]`);
 			}
 			let name = tkText(nToken);
-			tk += 1;
-			headNode.length += 1;
+			grow(headNode);
 			return true;
+		}
+
+		function expression() {
+			return parseError('not implemented lol');
+		}
+
+		function binding() {
+			let token = peek();
+			if(token.type != Duet.Token.ident) {
+				return false;
+			}
+			let asNode = addNode(Duet.ParseNode.binding, 1);
+			if(!isGood()) {
+				return false;
+			}
+			let eqToken = peek();
+			if(eqToken.type != Duet.Token.operator) {
+				return false;
+			}
+			if(tkText(eqToken) != '=') {
+				return false;
+			}
+			grow(asNode);
+			if(!isGood()) {
+				return false;
+			}
+			asNode.children = [];
+			var parent = tree;
+			tree = asNode.children;
+			grab(expression);
+			tree = parent;
+		}
+
+		function event() {
+			return parseError('not implemented lol');
+		}
+
+		function statement() {
+			skipNewlines();
+			return grab(binding, true) || grab(event);
 		}
 
 		function skipNewlines() {
@@ -388,23 +438,34 @@ const Duet = {
 			}
 		}
 
-		function grab(fn, skipComments = true) {
+		function grab(fn, backtrack = false, skipComments = true) {
+			var start = tk;
 			if(skipComments) {
 				while(isGood() && tokens[tk].type == Duet.Token.comment) {
 					tk ++;
 					skipNewlines();
 				}
 			}
-			return isGood() && fn();
+			var r = isGood() && fn();
+			if (!r) {
+				if(backtrack) {
+					tree.pop();
+					tk = start;
+				}
+				else {
+					parseError('Could not grab syntax of type '+fn.name, tk, tk - start);
+				}
+			}
+			return r;
 		}
 
 		skipNewlines();
-		if(!grab(header)) {
-			parseError('expected the program to start with either [program] or [entity] and a name');
-		}
-
+		grab(header);
 		while(isGood()) {
-			parseError('not implemented lol');
+			if(peek().type != Duet.Token.newline) {
+				parseError('Expected a newline between statements');
+			}
+			grab(statement);
 		}
 		return {tree: root, errors: errors};
 	},
