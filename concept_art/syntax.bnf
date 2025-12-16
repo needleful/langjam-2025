@@ -1,0 +1,26 @@
+script ::= <ignored>* <header> <clause-list>
+header ::= <header-type> <identifier>
+header-type ::= program | entity
+clause-list ::= (<newline>+ (<comment> | <clause>))*
+
+identifier ::= <letter>+ (_ | <digits>)*
+ignored ::= <comment> | <newline>
+comment ::= # <characters other than \n>* \n
+newline ::= (<whitespace other than \n>* \n)+
+
+clause ::= <binding> | <event>
+
+binding ::= <name-like> = <expression>
+name-like ::= <var-decl> | <function-declaration> | <accessor> | <name-tuple>
+var-decl ::= <identifier> | <identifier> : <type>
+function-declaration ::= <untyped-func> | <untyped-func> -> <identifier>
+untyped-func ::= <var-decl> '(' (<param-list>|<empty>) ')'
+param-list ::= <var-decl> | <var-decl>, <param-list>
+
+accessor ::= <var-decl> . ( <var-decl> | <accessor> )
+name-tuple ::= <ident-list> | <ident-list> : <type>
+ident-list ::= [ <identifier> (, <identifier>)* ]
+
+event ::= <condition> <newline> <ignored>*
+condition ::= <name-like> | <boolean-expression>
+
