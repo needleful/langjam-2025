@@ -150,9 +150,7 @@ const Duet = {
 		var tokens = f.tokens;
 		function processTree(node) {
 			for(let i = node.start; i < node.start+node.length;i++) {
-				if(!(i in tokens)) {
-					continue;
-				}
+				if(!(i in tokens)) continue;
 				tokens[i].span.classList.add('code-'+Duet.ParseNodeNames[node.type]);
 			}
 			if('children' in node) {
@@ -162,6 +160,10 @@ const Duet = {
 		processTree(result.node);
 		for(let err of result.errors) {
 			console.error('Parsing error: ', err.message, 'at token: ', err.start);
+			for(let i = err.start; i < err.start+err.length; i++) {
+				if(!(i in tokens)) continue;
+				tokens[i].span.classList.add('code-error');
+			}
 		}
 	},
 	createFile:() => {
@@ -222,8 +224,8 @@ const Duet = {
 		const r_indent = /^\t+/;
 		// For now, just single-character escapes
 		const r_escaped = /^\\./;
-		// catch-all for all non-whitespace characters
-		const r_operator = /^\S+/;
+		// catch-all for any non-alphanumeric and non-whitespace characters
+		const r_operator = /^[^\s\d\p{Alpha}_]+/u;
 		const r_text = /^[^\'\\]+/;
 
 		// Current character
@@ -313,23 +315,22 @@ const Duet = {
 		return tokens;
 	},
 	ParseNode: {
-		invalid: 0,
+		error: 0,
 		script: 1,
 		header: 2,
-		clauseList: 3,
-		identifier: 5,
-		binding: 6,
-		event: 7,
+		binding: 3,
+		event: 4,
+		accessor: 5,
+		number: 6,
+		valueList: 7,
 		declaration: 8,
 		expression: 9,
 		declVar: 10,
 		declFunction: 11,
 		declTuple: 12,
 		param: 13,
-		binOp: 14,
-		unOp: 15,
+		operator: 15,
 		funCall: 16,
-		accessor:17,
 		tuple: 18
 	},
 	ParseNodeNames: {},
@@ -345,28 +346,35 @@ const Duet = {
 			'+':3, '-':3,
 			'%':4,
 			'<':5, '<=':5, '>=':5, '>':5, '==':5, '!=':5,
-			'not':6, 'and':7, 'or':8
+			'!':6, '&':7, '|':8
 		};
+		const unaryOps = [
+			'+', '-', '!'
+		];
 
 		let tk = 0;
 		let errors = [];
 		let tokens = file.tokens;
 		let lowText = file.text.toLowerCase();
 
-		function newNode(type, length = 0) {
+		function newNode(type, length = 0, offset = 0) {
 			var n = {
 				type: type,
 				children: [],
-				start: tk,
+				start: tk + offset,
 				length: length
 			};
 			return n;
 		}
 
-		function parseError(text, length = 1) {
-			errors.push({start: tk, length: length, message: text});
-			tk += length;
-			return newNode(Duet.ParseNode.invalid, length);
+		function parseError(text, length = 1, offset = 0) {
+			var e = {start: tk + offset, length: length, message: text};
+			errors.push(e);
+			tk += length + offset;
+			let n = newNode(Duet.ParseNode.error, length);
+			n.start = e.start;
+			n.length = e.length;
+			return n;
 		}
 		function tkText(token) {
 			return lowText.substr(token.start, token.length);
@@ -402,6 +410,16 @@ const Duet = {
 			}
 		}
 
+		function grabText(type, string) {
+			let start = tk;
+			let token = grab(type);
+			if(!token || tkText(token) != string) {
+				tk = start;
+				return false;
+			}
+			return token;
+		}
+
 		function skipIgnored() {
 			while(grab(Duet.Token.comment) || grab(Duet.Token.newline)) {
 				;;
@@ -427,16 +445,283 @@ const Duet = {
 			return grow(h);
 		}
 
+		function listOf(fn) {
+			let result = [];
+			while(isGood()) {
+				var r = fn();
+				if(!r) {
+					break;
+				}
+				else {
+					result.push(r);
+				}
+			}
+			return result;
+		}
+
+		function declaration() {
+			let node = newNode(Duet.ParseNode.declaration);
+			let id = grab(Duet.Token.ident);
+			if(id) {
+				return grow(node);
+			}
+			else {
+				return parseError('Not implemented');
+			}
+		}
+
+		function number(op = false) {
+			let node = newNode(Duet.ParseNode.number);
+			grab(Duet.Token.digits);
+			if(grab(Duet.Token.period)) {
+				grab(Duet.Token.digits);
+			}
+			grab(Duet.Token.numExp);
+
+			return grow(node);
+		}
+
+		function value() {
+			let next = peek();
+			if(!next) {
+				return false;
+			}
+			switch(next.type) {
+			case Duet.Token.digits:
+				return number();
+			case Duet.Token.bracketStart:
+				grab(next.type);
+				let n = valueList();
+				if(!grab(Duet.Token.braketEnd)) {
+					return parseError('Expected a bracket "]" to end the list.', n.length, -n.length);
+				}
+				return n;
+			case Duet.Token.ident:
+			case Duet.Token.parenStart:
+			case Duet.Token.quote:
+			default:
+				return false;
+			}
+		}
+
+		function valueList(endType) {
+			var list = newNode(Duet.ParseNode.valueList);
+			while(isGood() && peek().type != endType) {
+				if(list.children.length && !grab(Duet.Token.comma)) {
+					list.children.push(parseError('Expected a comma in the list'));
+				}
+				while(grab(Duet.Token.comma)) {
+					list.children.push(parseError('Extra comma', 1, -1));
+				}
+				skipIgnored();
+				list.children.push(value());
+				skipIgnored();
+			}
+			return grow(list);
+		}
+
+		function expression() {
+			function operator(node) {
+				let c = node.children[0];
+				if(c.type != Duet.ParseNode.operator) {
+					console.error('Not an operator: ', tkText(tokens[c.start]), c);
+					c.type = Duet.ParseNode.error;
+					return null;
+				}
+				return c;
+			}
+
+			function isOp(node) {
+				if(!node.children.length) {
+					return false;
+				}
+				return node.children[0].type == Duet.ParseNode.operator;
+			}
+
+			function operatorText(node) {
+				let op = operator(node);
+				if(!op) {
+					return null;
+				}
+				else {
+					return tkText(tokens[op.start]);
+				}
+			}
+
+			function precedence(node) {
+				let optext = operatorText(node);
+				if(!optext || !(optext in opPrecedence)) {
+					return 0;
+				}
+				else {
+					return opPrecedence[optext];
+				}
+			}
+			function placement(top, pr_right) {
+				// Parent node, right-most node
+				let pl = [null, top];
+				while(isOp(pl[1]) && precedence(pl[1]) >= pr_right) {
+					var n = pl[1];
+					pl[0] = n;
+					pl[1] = n.children[n.children.length-1];
+				}
+				return pl;
+			}
+			function insert(exp, node) {
+				if(exp.children.length == 3) {
+					console.error('BUG: Node already has children');
+				}
+				else {
+					exp.children.push(node);
+				}
+			}
+
+			let start = tk;
+			// Top-level node
+			let exp = null;
+			// Most recent node (the one values will be added to)
+			let latest = null;
+			
+			let firstOp = grab(Duet.Token.operator);
+
+			if(firstOp) {
+				let opNode;
+
+				let opText = tkText(firstOp);
+				if(unaryOps.indexOf(opText) < 0) {
+					opNode = parseError(`Invalid starting operator: [${opText}]`, 1, -1);
+				}
+				else {
+					opNode = newNode(Duet.ParseNode.operator, 1, -1)
+				}
+				exp = newNode(Duet.ParseNode.expression, 1, -1);
+				exp.children = [opNode];
+				latest = exp;
+			}
+			while(isGood()) {
+				if(grab(Duet.Token.operator)) {
+					parseError(`Extra operator: [${tkText(next)}]`, 1, -1);
+				}
+				let s = tk;
+				let val = value();
+				if(!val) {
+					let len = tk-s;
+					val = parseError(`Expected a value`, len, -len);
+				}
+				if(!latest) {
+					exp = val;
+				}
+				else {
+					insert(latest, val);
+				}
+				let o = grab(Duet.Token.operator);
+				if(o) {
+					let otext = tkText(o);
+					let opNode = newNode(Duet.ParseNode.operator, 1, -1);
+					let newExp = newNode(Duet.ParseNode.expression, 1, -1);
+					latest = newExp;
+
+					let pr_right;
+					if(!(otext in opPrecedence)) {
+						parseError(`Unknown operator: ${otext}`, 1, -1);
+						pr_right = 100;
+					}
+					else {
+						pr_right = opPrecedence[otext];
+					}
+
+					let [parent, right] = placement(exp, pr_right);
+					if(!parent) {
+						newExp.children = [opNode, exp];
+						newExp.start = exp.start;
+						exp = grow(newExp);
+					}
+					else {
+						let old_right = parent.children.pop();
+						if(old_right != right) {
+							console.error("I don't know what this means");
+						}
+						newExp.start = right.start;
+						insert(parent, grow(newExp));
+						newExp.children = [opNode, right]
+					}
+				}
+				else {
+					break;
+				}
+			}
+			return grow(exp);
+		}
+
+		function binding() {
+			let start = tk;
+			let node = newNode(Duet.ParseNode.binding);
+			let d = declaration();
+			if(!d) {
+				tk = start;
+				return false;
+			}
+			if(!grabText(Duet.Token.operator, '=')) {
+				tk = start;
+				return false;
+			}
+			let e = expression();
+			if(!e) {
+				return parseError('Expected an expression for the binding clause');
+			}
+			node.children = [d, e];
+			return grow(node);
+		}
+
+		function event() {
+			return false;
+		}
+
+		function clause() {
+			skipIgnored();
+			return binding() || event();
+		}
+
 		let script = newNode(Duet.ParseNode.script);
 		
 		skipIgnored();
 		script.children.push(header());
+		script.children = script.children.concat(listOf(clause));
+		skipIgnored();
+		if(isGood()) {
+			script.children.push(parseError('Remaining code was not parsed', tk - tokens.length));
+		}
 
 		return {
 			node: grow(script),
 			errors: errors
 		};
 	},
+	readTree:(file)=> {
+		if(!(file in Duet.files)) {
+			console.error('No such file: ', file);
+			return;
+		}
+		let f = Duet.files[file];
+		function treeRecurse(tree) {
+			var t = {
+				type: Duet.ParseNodeNames[tree.type]
+			};
+			if(tree.children && tree.children.length) {
+				t.children = tree.children.map(treeRecurse);
+			}
+			else {
+				t.text = [];
+				for(let i = tree.start; i < tree.start+tree.length; i++) {
+					if(!(i in f.tokens)) continue;
+					let token = f.tokens[i];
+					t.text.push(f.text.substr(token.start, token.length));
+				}
+			}
+			return t;
+		}
+		return treeRecurse(f.parseTree.node);
+	}
 };
 
 for(let k in Duet.Token) {
