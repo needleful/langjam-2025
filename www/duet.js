@@ -323,7 +323,7 @@ const Duet = {
 		accessor: 5,
 		number: 6,
 		valueList: 7,
-		declaration: 8,
+		typeDecl: 8,
 		expression: 9,
 		declVar: 10,
 		declFunction: 11,
@@ -331,7 +331,8 @@ const Duet = {
 		param: 13,
 		operator: 15,
 		funCall: 16,
-		tuple: 18
+		string: 17,
+		condition: 18,
 	},
 	ParseNodeNames: {},
 	// Parse nodes will be a dictionary of
@@ -459,14 +460,35 @@ const Duet = {
 			return result;
 		}
 
+		function accessor() {
+			let name = newNode(Duet.ParseNode.accessor);
+			grab(Duet.Token.ident);
+			while(grab(Duet.Token.period)) {
+				if(!grab(Duet.Token.ident)) {
+					parseError('Trailing period "." after identifier', 1, -1);
+					break;
+				}
+			}
+			return grow(name);
+		}
+
 		function declaration() {
-			let node = newNode(Duet.ParseNode.declaration);
-			let id = grab(Duet.Token.ident);
-			if(id) {
-				return grow(node);
+			let name = accessor();
+			if(!name) {
+				return false;
+			}
+			if(grab(Duet.Token.colon)) {
+				let type = accessor();
+				if(!type) {
+					type = parseError('Expected a type after the colon [:]', 1, -1);
+				}
+				let typedDecl = newNode(Duet.ParseNode.typedDecl);
+				typedDecl.start = name.start;
+				typedDecl.children = [name, type];
+				return grow(typedDecl);
 			}
 			else {
-				return parseError('Not implemented');
+				return grow(name);
 			}
 		}
 
@@ -491,14 +513,44 @@ const Duet = {
 				return number();
 			case Duet.Token.bracketStart:
 				grab(next.type);
-				let n = valueList();
-				if(!grab(Duet.Token.braketEnd)) {
-					return parseError('Expected a bracket "]" to end the list.', n.length, -n.length);
+				let n = valueList(Duet.Token.bracketEnd);
+				if(!grab(Duet.Token.bracketEnd)) {
+					parseError('Expected a bracket "]" to end the list.', n.length, -n.length);
 				}
 				return n;
 			case Duet.Token.ident:
+				let name = accessor();
+				if(grab(Duet.Token.parenStart)) {
+					let node = newNode(Duet.ParseNode.funCall);
+					let args = valueList(Duet.Token.parenEnd);
+					if(!grab(Duet.Token.parenEnd)) {
+						parseError('Expected a parenthesis ")" to end the function arguments', args.length, -args.length);
+					}
+					node.children = [name, args];
+					return grow(node);
+				}
+				else {
+					return name;
+				}
 			case Duet.Token.parenStart:
+				var e = expression();
+				if(!e) {
+					parseError('Expected an expression inside parentheses');
+				}
+				if(!grab(Duet.Token.parenEnd)) {
+					parseError('Expected an ending parenthesis', e.length, -e.length);
+				}
+				return grow(e);
 			case Duet.Token.quote:
+				let node = newNode(Duet.ParseNode.string);
+				grab(next.type);
+				while(grab(Duet.Token.stringText) || grab(Duet.Token.escapedStringText)) {
+					;;
+				}
+				if(!grab(Duet.Token.quote)) {
+					parseError("Expected a single quote ['] to end the string", 1, -1);
+				}
+				return grow(node);
 			default:
 				return false;
 			}
@@ -514,7 +566,7 @@ const Duet = {
 					list.children.push(parseError('Extra comma', 1, -1));
 				}
 				skipIgnored();
-				list.children.push(value());
+				list.children.push(expression());
 				skipIgnored();
 			}
 			return grow(list);
@@ -581,7 +633,7 @@ const Duet = {
 			let exp = null;
 			// Most recent node (the one values will be added to)
 			let latest = null;
-			
+
 			let firstOp = grab(Duet.Token.operator);
 
 			if(firstOp) {
@@ -667,14 +719,80 @@ const Duet = {
 			}
 			let e = expression();
 			if(!e) {
-				return parseError('Expected an expression for the binding clause');
+				e = parseError('Expected an expression for the binding clause');
 			}
 			node.children = [d, e];
+			if(grab(Duet.Token.semicolon)) {
+				let e2 = expression();
+				if(!e2) {
+					e2 = parseError('Expected another expression after the initial binding (prefaced with a semicolon [;])', 1, -1);
+				}
+				node.children.push(e2);
+			}
+			while(grab(Duet.Token.semicolon)) {
+				parseError('Only two expressions are allowed for each binding: an initialization, and an integration');
+				let ex = expression();
+				if(ex) {
+					node.children.push();
+				}
+			}
+			return grow(node);
+		}
+
+		function boolExpression() {
+			return false;
+		}
+
+		function message() {
+			let node = newNode(Duet.ParseNode.funCall);
+			let name = accessor();
+			if(!name) {
+				return false;
+			}
+			node.children.push(name);
+			if(grab(Duet.Token.parenStart)) {
+				let args = valueList(Duet.Token.parenEnd);
+				if(!grab(Duet.Token.parenEnd)) {
+					parseError('Missing an ending parenthesis ")" after arguments', 1, -1);
+				}
+				node.children.push(args);
+			}
 			return grow(node);
 		}
 
 		function event() {
-			return false;
+			var eventNode = newNode(Duet.ParseNode.event);
+			let condition = expression();
+			condition.type = Duet.ParseNode.condition;
+			if(!condition) {
+				return false;
+			}
+			eventNode.children.push(condition);
+			if(!grab(Duet.Token.newline)) {
+				parseError('Expected an indented line after the condition', condition.length, -condition.length);
+				return grow(eventNode);
+			}
+			skipIgnored();
+			if(!grab(Duet.Token.indentation)) {
+				parseError('Expected an indented line.', condition.length, -condition.length);
+				return grow(eventNode);
+			}
+			else {
+				skipIgnored();
+				let fn = message();
+				if(!fn) {
+					parseError('No messages for event');
+				}
+				else while(fn) {
+					eventNode.children.push(fn);
+					skipIgnored();
+					if(!grab(Duet.Token.newline) || !grab(Duet.Token.indentation)) {
+						break;
+					}
+					fn = message();
+				}
+			}
+			return grow(eventNode);
 		}
 
 		function clause() {
@@ -689,7 +807,8 @@ const Duet = {
 		script.children = script.children.concat(listOf(clause));
 		skipIgnored();
 		if(isGood()) {
-			script.children.push(parseError('Remaining code was not parsed', tk - tokens.length));
+			var l = tokens.length - tk;
+			script.children.push(parseError('Remaining code was not parsed', l));
 		}
 
 		return {
