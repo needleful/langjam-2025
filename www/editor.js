@@ -24,7 +24,7 @@ class Editor {
 			return false;
 		case "Enter":
 			if(evt.ctrlKey) {
-				compileAndRun();
+				this.run();
 			}
 			//break;
 			else if (this.text.selectionStart == this.text.selectionEnd) {
@@ -116,9 +116,11 @@ class Editor {
 	setContent = (text) => {
 		this.text.value = text;
 	}
+
+	run = () => {
+		console.log('Not bound');
+	}
 }
-let editor = new Editor(document.getElementById("editor-text"));
-editor.status = document.getElementById("editor-status");
 
 function sync_scroll() {
 	/* Scroll result to scroll coords of event - sync with textarea */

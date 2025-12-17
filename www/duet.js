@@ -323,7 +323,7 @@ const Duet = {
 		accessor: 5,
 		number: 6,
 		valueList: 7,
-		typeDecl: 8,
+		declaration: 8,
 		expression: 9,
 		declVar: 10,
 		declFunction: 11,
@@ -477,19 +477,21 @@ const Duet = {
 			if(!name) {
 				return false;
 			}
-			if(grab(Duet.Token.colon)) {
-				let type = accessor();
+			let decl = newNode(Duet.ParseNode.declaration);
+			decl.start = name.start;
+
+			if(grabText(Duet.Token.operator, ':')) {
+				let type = expression();
 				if(!type) {
-					type = parseError('Expected a type after the colon [:]', 1, -1);
+					type = parseError('Expected a type after the colon [:]', name.length, -name.length);
 				}
-				let typedDecl = newNode(Duet.ParseNode.typedDecl);
-				typedDecl.start = name.start;
-				typedDecl.children = [name, type];
-				return grow(typedDecl);
+				decl.start = name.start;
+				decl.children = [name, type];
 			}
 			else {
-				return grow(name);
+				decl.children = [name];
 			}
+			return grow(decl);
 		}
 
 		function number(op = false) {

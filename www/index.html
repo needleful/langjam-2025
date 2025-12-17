@@ -57,7 +57,7 @@
 			.code-condition {
 				color: blue;
 			}
-			.code-binding {
+			.code-declaration {
 				color: green;
 			}
 			.code-invalid {
@@ -110,5 +110,10 @@
 			</div>
 		</div>
 		<script type="text/javascript" src="/editor.js"></script>
+		<script>
+			let editor = new Editor(document.getElementById("editor-text"));
+			editor.status = document.getElementById("editor-status");
+			editor.run = Duet.compile;
+		</script>
 	</body>
 </html>
