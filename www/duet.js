@@ -148,20 +148,18 @@ const Duet = {
 		var f = Duet.files[Duet.activeFile];
 		var result = f.parseTree;
 		var tokens = f.tokens;
-		function processTree(t) {
-			for(let node of t) {
-				for(let i = node.start; i < node.start+node.length;i++) {
-					if(!(i in tokens)) {
-						continue;
-					}
-					tokens[i].span.classList.add('code-'+Duet.ParseNodeNames[node.type]);
+		function processTree(node) {
+			for(let i = node.start; i < node.start+node.length;i++) {
+				if(!(i in tokens)) {
+					continue;
 				}
-				if('children' in node) {
-					processTree(node.children);
-				}
+				tokens[i].span.classList.add('code-'+Duet.ParseNodeNames[node.type]);
+			}
+			if('children' in node) {
+				node.children.map(processTree);
 			}
 		}
-		processTree(result.tree);
+		processTree(result.node);
 		for(let err of result.errors) {
 			console.error('Parsing error: ', err.message, 'at token: ', err.start);
 		}
@@ -315,26 +313,72 @@ const Duet = {
 		return tokens;
 	},
 	ParseNode: {
-		error:0,
-		header:1,
-		binding:2
+		invalid: 0,
+		script: 1,
+		header: 2,
+		clauseList: 3,
+		identifier: 5,
+		binding: 6,
+		event: 7,
+		declaration: 8,
+		expression: 9,
+		declVar: 10,
+		declFunction: 11,
+		declTuple: 12,
+		param: 13,
+		binOp: 14,
+		unOp: 15,
+		funCall: 16,
+		accessor:17,
+		tuple: 18
 	},
 	ParseNodeNames: {},
+	// Parse nodes will be a dictionary of
+	//	type: Duet.ParseNode
+	//	start: int (index of first token)
+	//	length: int (total tokens)
+	//	children: parseNode[] (recursive structure)
 	parse: (file)=> {
 		const opPrecedence = {
 			primary:0,
-			'*':2, '/':2, '%':2, '^':1,
+			'^':1, '*':2, '/':2,
 			'+':3, '-':3,
-			'<':4, '<=':4, '>=':4, '>':4, '==':4, '!=':4,
-			'~':5, '&':6, '|':7, '->':8
+			'%':4,
+			'<':5, '<=':5, '>=':5, '>':5, '==':5, '!=':5,
+			'not':6, 'and':7, 'or':8
 		};
 
 		let tk = 0;
-		let root = [];
-		let tree = root;
 		let errors = [];
 		let tokens = file.tokens;
 		let lowText = file.text.toLowerCase();
+
+		function newNode(type, length = 0) {
+			var n = {
+				type: type,
+				children: [],
+				start: tk,
+				length: length
+			};
+			return n;
+		}
+
+		function parseError(text, length = 1) {
+			errors.push({start: tk, length: length, message: text});
+			tk += length;
+			return newNode(Duet.ParseNode.invalid, length);
+		}
+		function tkText(token) {
+			return lowText.substr(token.start, token.length);
+		}
+
+		function grow(node, amount = 0) {
+			if(amount == 0) {
+				amount = tk - node.start - node.length;
+			}
+			node.length += amount;
+			return node;
+		}
 
 		function isGood() {
 			return tk < tokens.length;
@@ -344,130 +388,54 @@ const Duet = {
 			return tokens[tk];
 		}
 
-		function tkText(token) {
-			return lowText.substr(token.start, token.length);
+		function grab(type) {
+			if(!isGood()) {
+				return false;
+			}
+			let token = peek();
+			if(token.type == type) {
+				tk++;
+				return token;
+			}
+			else {
+				return false;
+			}
 		}
 
-		function addNode(type, length) {
-			var t = {
-				type: type,
-				start:tk,
-				length: length
-			};
-			tree.push(t);
-			tk += length;
-			return t;
-		}
-
-		function grow(node, amount = 1) {
-			node.length += amount;
-			tk += amount;
-		}
-
-		function parseError(text, length = 1) {
-			errors.push({start: tk, message: text});
-			addNode(Duet.ParseNode.error, length);
-			return false;
+		function skipIgnored() {
+			while(grab(Duet.Token.comment) || grab(Duet.Token.newline)) {
+				;;
+			}
 		}
 
 		function header() {
-			let token = peek();
-			if(token.type != Duet.Token.ident) {
-				return false;
+			let h = newNode(Duet.ParseNode.header);
+			let type = grab(Duet.Token.ident);
+			if(!type) {
+				return parseError('The script should start with a type and name');
 			}
-			let type = tkText(token);
-			if(type != 'program' && type != 'entity') {
-				return false;
+			let typeName = tkText(type);
+			if(typeName != 'program' && typeName != 'entity') {
+				return parseError(`The type of a script must be either [program] or [entity], found [${typeName}]`);
 			}
-			let headNode = addNode(Duet.ParseNode.header, 1);
-			if(!isGood()) {
-				return parseError('header ended early');
+
+			let name = grab(Duet.Token.ident);
+			if(!name) {
+				return parseError('We need a unique name for each script after its type');
 			}
-			let nToken = peek();
-			if(nToken.type != Duet.Token.ident) {
-				return parseError(`Expected a name after header type [${type}]`);
-			}
-			let name = tkText(nToken);
-			grow(headNode);
-			return true;
+
+			return grow(h);
 		}
 
-		function expression() {
-			return parseError('not implemented lol');
-		}
+		let script = newNode(Duet.ParseNode.script);
+		
+		skipIgnored();
+		script.children.push(header());
 
-		function binding() {
-			let token = peek();
-			if(token.type != Duet.Token.ident) {
-				return false;
-			}
-			let asNode = addNode(Duet.ParseNode.binding, 1);
-			if(!isGood()) {
-				return false;
-			}
-			let eqToken = peek();
-			if(eqToken.type != Duet.Token.operator) {
-				return false;
-			}
-			if(tkText(eqToken) != '=') {
-				return false;
-			}
-			grow(asNode);
-			if(!isGood()) {
-				return false;
-			}
-			asNode.children = [];
-			var parent = tree;
-			tree = asNode.children;
-			grab(expression);
-			tree = parent;
-		}
-
-		function event() {
-			return parseError('not implemented lol');
-		}
-
-		function statement() {
-			skipNewlines();
-			return grab(binding, true) || grab(event);
-		}
-
-		function skipNewlines() {
-			while(isGood() && tokens[tk].type == Duet.Token.newline) {
-				tk++;
-			}
-		}
-
-		function grab(fn, backtrack = false, skipComments = true) {
-			var start = tk;
-			if(skipComments) {
-				while(isGood() && tokens[tk].type == Duet.Token.comment) {
-					tk ++;
-					skipNewlines();
-				}
-			}
-			var r = isGood() && fn();
-			if (!r) {
-				if(backtrack) {
-					tree.pop();
-					tk = start;
-				}
-				else {
-					parseError('Could not grab syntax of type '+fn.name, tk, tk - start);
-				}
-			}
-			return r;
-		}
-
-		skipNewlines();
-		grab(header);
-		while(isGood()) {
-			if(peek().type != Duet.Token.newline) {
-				parseError('Expected a newline between statements');
-			}
-			grab(statement);
-		}
-		return {tree: root, errors: errors};
+		return {
+			node: grow(script),
+			errors: errors
+		};
 	},
 };
 

@@ -1,7 +1,7 @@
 script ::= <ignored>* <header> <clause-list>
 header ::= <header-type> <identifier>
 header-type ::= program | entity
-clause-list ::= (<newline>+ (<comment> | <clause>))*
+clause-list ::= <newline> <ignored>* <clause> <clause-list> | <empty>
 
 identifier ::= <letter>+ (_ | <digits>)*
 ignored ::= <comment> | <newline>
@@ -10,17 +10,39 @@ newline ::= (<whitespace other than \n>* \n)+
 
 clause ::= <binding> | <event>
 
-binding ::= <name-like> = <expression>
-name-like ::= <var-decl> | <function-declaration> | <accessor> | <name-tuple>
-var-decl ::= <identifier> | <identifier> : <type>
-function-declaration ::= <untyped-func> | <untyped-func> -> <identifier>
-untyped-func ::= <var-decl> '(' (<param-list>|<empty>) ')'
+binding ::= <declaration> = <expression>
+declaration ::= <name-like> | <name-like> : <identifier>
+name-like ::= <accessor> | <function-declaration> | <name-tuple>
+function-declaration ::= <var-decl> '(' (<param-list>|<empty>) ')'
 param-list ::= <var-decl> | <var-decl>, <param-list>
 
-accessor ::= <var-decl> . ( <var-decl> | <accessor> )
+accessor ::= <identifier> | <identifier> . <accessor>
 name-tuple ::= <ident-list> | <ident-list> : <type>
 ident-list ::= [ <identifier> (, <identifier>)* ]
 
-event ::= <condition> <newline> <ignored>*
-condition ::= <name-like> | <boolean-expression>
+expression ::= <arithmetic-expression> | <boolean-expression>
 
+arithmetic-expression ::= <addition> | <addition> % <addition>
+addition ::= <multiplication> | <multiplication> (-|+) <multiplication>
+multiplication ::= <exponentiation> | <exponentiation> (*|/) <exponentiation>
+exponentiation ::= <primary> | <primary> ^ <primary>
+primary ::= <value> | ( <arithmetic-expression> )
+
+boolean-expression ::= <cond-and> | <cond-and> or <cond-and>
+cond-and ::= <cond-not> | <cond-not> and <cond-not>
+cond-not ::= <cond-primary> | not <cond-primary>
+cond-primary ::= <value> | ( <boolean-expression> ) | <comparison>
+comparison ::= <arithmetic-expression> <comparison-operator> <arithmetic-expression>
+comparison-operator ::= > | \< | >= | \<= | == | !=
+
+value ::= <constant-value> | <variable-value> | [ <value-list>]
+constant-value ::= <number> | <string>
+variable-value ::= <accessor> | <function-call>
+
+function-call ::= <accessor> '(' <argument-list> ')'
+argument-list ::= <empty> | <value> (, <value>)*
+
+event ::= <condition> <newline> <effect-list>
+condition ::= <value> | <boolean-expression>
+effect-list ::= <effect> | <effect> <newline> <effect-list>
+effect ::= <ignored>* <indentation> <function-call>

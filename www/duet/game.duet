@@ -1,4 +1,4 @@
 program game
 
 platform.frame
-	printnumber('current frame: ', platform.frame)
+	platform.printNumber('current frame: ', platform.frame)
