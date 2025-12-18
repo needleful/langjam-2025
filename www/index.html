@@ -3,7 +3,7 @@
 	<head>
 		<title>Duet</title>
 		<style>
-			#main-content {
+			#editor-container {
 				display:flex;
 			}
 			#editor {
@@ -73,9 +73,12 @@
 				text-decoration: wavy underline;
 				color: #AA10DD;
 			}
+			.game-canvas {
+				max-width: 99%;
+			}
 		</style>
-		<script type="text/javascript" src='/duet.js'></script>
-		<script type="text/javascript">
+		<script type='text/javascript' src='/duet.js'></script>
+		<script type='text/javascript'>
 			Duet.loadObject('/duet/game.duet').then(() => {
 				Duet.switchTo('/duet/game.duet');
 				Duet.loadObject('/duet/player.duet');
@@ -84,20 +87,21 @@
 	</head>
 	<body>
 		<h1>Langjam Gamejam entry: Duet</h1>
-		<canvas id="game-canvas" width="800" height="600">
+		<canvas id='game-canvas' width='800' height='600' tabindex='1'>
 		</canvas>
+		<br/>
 		<button id='button-pause' onclick='togglePause()'>Pause</button>
 		<h2>Editor</h2>
 		<h4 id='current-file'>Editing a new file</h4>
-		<div id='main-content'>
-			<div id="editor">
+		<div id='editor-container'>
+			<div id='editor'>
 				<div id='editor-root'>
-					<textarea id="editor-text" class='code-container' rows="20" 
-						aria-hint="The keyboard can be captured by the text editor. Press escape to toggle this behavior." spellcheck="false"
+					<textarea id='editor-text' class='code-container' rows='20' 
+						aria-hint='The keyboard can be captured by the text editor. Press escape to toggle this behavior.' spellcheck='false'
 						oninput='Duet.lex(false)' onscroll='sync_scroll()'>#Type code here</textarea>
-					<pre id="highlighting" class='code-container' aria-hidden="true" tabindex='-1'><code id="highlighting-content" class='code-fonts'></code></pre>
+					<pre id='highlighting' class='code-container' aria-hidden='true' tabindex='-1'><code id='highlighting-content' class='code-fonts'></code></pre>
 				</div>
-				<br></br>
+				<br/>
 				<p id='editor-status'>Tab Captured. Press Escape to Toggle</p>
 				<button onclick="Duet.compileAndRun()">Compile and Run</button>
 			</div>
@@ -115,6 +119,11 @@
 			editor.status = document.getElementById('editor-status');
 			editor.run = Duet.compileAndRun;
 			Duet.canvas = document.getElementById('game-canvas');
+			window.addEventListener('keydown', (e) => {
+				if(e.key != 'Tab' && document.activeElement == Duet.canvas) {
+					e.preventDefault();
+				}
+			});
 
 			function sync_scroll() {
 				/* Scroll result to scroll coords of event - sync with textarea */

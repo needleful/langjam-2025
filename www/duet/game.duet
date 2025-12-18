@@ -1,4 +1,3 @@
 program game
 
-platform.frame
-	platform.printNumber('current frame: ', platform.frame)
+player = create(player)

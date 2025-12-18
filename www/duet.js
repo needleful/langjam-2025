@@ -22,6 +22,12 @@ const Type = {
 	object: 7
 };
 
+const Update = {
+	constant: 0,
+	frame: 1,
+	variable: 2
+}
+
 const Duet = {
 	// A dictionary
 	// name of object/file -> {path:String, text:String, type:String, element:Element}
@@ -32,6 +38,7 @@ const Duet = {
 	platform: {
 		canvas: {
 			type: Type.struct,
+			update: Update.variable,
 			clearcolor: {
 				type: [Type.real, 3],
 				value: [1,1,1]
@@ -39,18 +46,22 @@ const Duet = {
 		},
 		paused: {
 			type: Type.boolean,
+			update: Update.variable,
 			value: false
 		},
 		frame: {
 			type: Type.integer,
+			update: Update.frame,
 			value: 0
 		},
 		deltams: {
 			type: Type.integer,
+			update: Update.constant,
 			value: 33
 		},
 		loadsprite: {
 			type: Type.function,
+			update: Update.constant,
 			arguments: [Type.string],
 			return: Type.object,
 			fn: async (paths) => {
@@ -66,19 +77,94 @@ const Duet = {
 					return img;
 				}));
 			}
+		},
+		keyboard: {
+			type: Type.struct,
+			update: Update.frame,
+			right: {
+				type: Type.integer,
+				value: 0
+			},
+			left: {
+				type: Type.integer,
+				value: 0
+			},
+			up: {
+				type: Type.integer,
+				value: 0
+			},
+			down: {
+				type: Type.integer,
+				value: 0
+			}
+		},
+		clamp: {
+			type: Type.function,
+			arguments: [Type.real, Type.real, Type.real],
+			return: Type.real,
+			fn: (values, mins, maxs) => {
+				let result = [];
+				result.length = values.length;
+				for(let i = 0; i < values.length; i++) {
+					let value = values[i];
+					let min = mins[i];
+					let max = maxs[i];
+
+					if(value > max) {
+						result[i] = max;
+					}
+					else if(value < min) {
+						result[i] = min;
+					}
+					else result[i] = value;
+				}
+				return result;
+			}
 		}
 	},
 
 	// Set once per script
 	constants: {},
+	vars: {},
+	press: (e) => {
+		Duet._keySet(e.key, 1);
+	},
+	_keySet: (key, val) => {
+		switch(key) {
+		case "ArrowUp":
+			Duet.platform.keyboard.up.value = val;
+			break;
+		case "ArrowDown":
+			Duet.platform.keyboard.down.value = val;
+			break;
+		case "ArrowLeft":
+			Duet.platform.keyboard.left.value = val;
+			break;
+		case "ArrowRight":
+			Duet.platform.keyboard.right.value = val;
+			break;
+		}
+	},
+	release: (e) => {
+		Duet._keySet(e.key, 0);
+	},
 
 	run: async () => {
 		let images = await Duet.platform.loadsprite.fn(['/assets/player.png']);
+		Duet.canvas.onkeydown = Duet.press;
+		Duet.canvas.onkeyup = Duet.release;
 		Duet.constants = {
 			player:{
-				sprite: images[0]
+				sprite: images[0],
+				speed: 10.0
 			}
 		};
+		Duet.vars = {
+			player:{
+				position: [[0,0]]
+			}
+		}
+
 		// TODO: get from code
 		let systemInitializers = [
 			['canvas', 'clearcolor', [0,0,0]]
@@ -109,7 +195,18 @@ const Duet = {
 			draw2d.fillRect(0, 0, canvas.width, canvas.height);
 		}
 
-		draw2d.drawImage(Duet.constants.player.sprite, 0, 0);
+		// Player updates
+		let pp = Duet.vars.player.position;
+		let kb = Duet.platform.keyboard;
+		let movement = [kb.right.value - kb.left.value, kb.down.value - kb.up.value];
+		for(let i = 0; i < pp.length; i++) {
+			let s = Duet.constants.player.speed;
+			pp[i] = Duet.platform.clamp.fn([
+				pp[i][0] + s * movement[0],
+				pp[i][1] + s * movement[1]
+			], [0,0], [Duet.canvas.width, Duet.canvas.height]);
+			draw2d.drawImage(Duet.constants.player.sprite, pp[i][0], pp[i][1]);
+		}
 
 		Duet.platform.frame.value += 1;
 		if(!Duet.platform.paused.value) {
