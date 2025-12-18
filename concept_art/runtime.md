@@ -6,4 +6,12 @@ Atoms
 - Initialization
 	- Allocate program
 	- Initialize program variables
-	- 
+	- Collect creation messages
+- Each Frame:
+	- Apply messages
+		- Create/delete new objects
+	- Get system values
+	- Apply dependencies
+		- Collect Events
+	- Fire events
+		- Collect messages

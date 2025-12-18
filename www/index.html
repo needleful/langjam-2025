@@ -86,6 +86,7 @@
 		<h1>Langjam Gamejam entry: Duet</h1>
 		<canvas id="game-canvas" width="800" height="600">
 		</canvas>
+		<button id='button-pause' onclick='togglePause()'>Pause</button>
 		<h2>Editor</h2>
 		<h4 id='current-file'>Editing a new file</h4>
 		<div id='main-content'>
@@ -93,27 +94,40 @@
 				<div id='editor-root'>
 					<textarea id="editor-text" class='code-container' rows="20" 
 						aria-hint="The keyboard can be captured by the text editor. Press escape to toggle this behavior." spellcheck="false"
-						oninput="Duet.lex(false)" onscroll="sync_scroll()">#Type code here</textarea>
+						oninput='Duet.lex(false)' onscroll='sync_scroll()'>#Type code here</textarea>
 					<pre id="highlighting" class='code-container' aria-hidden="true" tabindex='-1'><code id="highlighting-content" class='code-fonts'></code></pre>
 				</div>
 				<br></br>
 				<p id='editor-status'>Tab Captured. Press Escape to Toggle</p>
-				<button onclick="Duet.compile()">Compile and Run</button>
+				<button onclick="Duet.compileAndRun()">Compile and Run</button>
 			</div>
 			<div id='file-panel'>
 				<h3>Files</h3>
 				<input id='new-file-name' type='text' value='newFile.duet'/>
 				<ul id='files-list'>
-					
 				</ul>
 				<button onclick='Duet.createFile()'>Create File</button>
 			</div>
 		</div>
-		<script type="text/javascript" src="/editor.js"></script>
+		<script type='text/javascript' src='/editor.js'></script>
 		<script>
-			let editor = new Editor(document.getElementById("editor-text"));
-			editor.status = document.getElementById("editor-status");
-			editor.run = Duet.compile;
+			let editor = new Editor(document.getElementById('editor-text'));
+			editor.status = document.getElementById('editor-status');
+			editor.run = Duet.compileAndRun;
+			Duet.canvas = document.getElementById('game-canvas');
+
+			function sync_scroll() {
+				/* Scroll result to scroll coords of event - sync with textarea */
+				let highlight = document.getElementById("highlighting");
+				// Get and set x and y
+				highlight.scrollTop = editor.text.scrollTop;
+				highlight.scrollLeft = editor.text.scrollLeft;
+			}
+			function togglePause() {
+				Duet.setPaused(!Duet.getPaused());
+				let b = document.getElementById('button-pause');
+				b.innerText = Duet.getPaused() ? 'Resume' : 'Pause';
+			}
 		</script>
 	</body>
 </html>

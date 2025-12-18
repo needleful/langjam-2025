@@ -11,11 +11,120 @@ function makeChild(parent, tag, attributes) {
 	return item;
 }
 
+const Type = {
+	real: 0,
+	integer: 1,
+	struct: 2,
+	functionType: 3,
+	type: 4,
+	boolean: 5,
+	string: 6,
+	object: 7
+};
+
 const Duet = {
 	// A dictionary
 	// name of object/file -> {path:String, text:String, type:String, element:Element}
+	canvas: undefined,
 	files: {},
 	activeFile: undefined,
+	// Our "standard library"
+	platform: {
+		canvas: {
+			type: Type.struct,
+			clearcolor: {
+				type: [Type.real, 3],
+				value: [1,1,1]
+			}
+		},
+		paused: {
+			type: Type.boolean,
+			value: false
+		},
+		frame: {
+			type: Type.integer,
+			value: 0
+		},
+		deltams: {
+			type: Type.integer,
+			value: 33
+		},
+		loadsprite: {
+			type: Type.function,
+			arguments: [Type.string],
+			return: Type.object,
+			fn: async (paths) => {
+				return await Promise.all(paths.map(async (path) => {
+					let response = await fetch(path);
+					if(!response.ok) {
+						return null;
+					}
+					const blob = await response.blob();
+					const url = URL.createObjectURL(blob);
+					const img = document.createElement('img');
+					img.src = url;
+					return img;
+				}));
+			}
+		}
+	},
+
+	// Set once per script
+	constants: {},
+
+	run: async () => {
+		let images = await Duet.platform.loadsprite.fn(['/assets/player.png']);
+		Duet.constants = {
+			player:{
+				sprite: images[0]
+			}
+		};
+		// TODO: get from code
+		let systemInitializers = [
+			['canvas', 'clearcolor', [0,0,0]]
+		];
+
+		for(let init of systemInitializers) {
+			let struct = Duet.platform;
+			let lastIndex = init.length-1;
+			for(let i = 0; i < lastIndex; i++) {
+				struct = struct[init[i]];
+			}
+			console.log(init);
+			if('set' in struct) {
+				struct.set(init[lastIndex]);
+			}
+			else{
+				struct.value = init[lastIndex];
+			}
+		}
+		setTimeout(Duet.frame, Duet.platform.deltams.value);
+	},
+	frame: () => {
+		let canvas = Duet.canvas;
+		let draw2d = canvas.getContext('2d');
+		{
+			let cc = Duet.platform.canvas.clearcolor.value;
+			draw2d.fillstyle = `rgb(${255*cc[0]}, ${255*cc[1]}, ${255*cc[2]})`;
+			draw2d.fillRect(0, 0, canvas.width, canvas.height);
+		}
+
+		draw2d.drawImage(Duet.constants.player.sprite, 0, 0);
+
+		Duet.platform.frame.value += 1;
+		if(!Duet.platform.paused.value) {
+			setTimeout(Duet.frame, Duet.platform.deltams.value);
+		}
+	},
+	setPaused: (p) => {
+		Duet.platform.paused.value = p;
+		if(!p) {
+			Duet.frame();
+		}
+	},
+	getPaused: () => {
+		return Duet.platform.paused.value;
+	},
 	switchTo: (name) => {
 		Duet.updateText();
 		if(name in Duet.files) {
@@ -103,8 +212,12 @@ const Duet = {
 		}
 		Duet.showParseResults();
 	},
+	compileAndRun: () => {
+		Duet.compile();
+		Duet.run();
+	},
 	compile: () => {
-		console.log('DUET: Definitely compiling!!');
+		console.log('DUET: Compiling');
 		Duet.lex();
 		Duet.parse_all();
 	},

@@ -121,11 +121,3 @@ class Editor {
 		console.log('Not bound');
 	}
 }
-
-function sync_scroll() {
-	/* Scroll result to scroll coords of event - sync with textarea */
-	let highlight = document.getElementById("highlighting");
-	// Get and set x and y
-	highlight.scrollTop = editor.text.scrollTop;
-	highlight.scrollLeft = editor.text.scrollLeft;
-}
