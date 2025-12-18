@@ -19,14 +19,26 @@ const Type = {
 	type: 4,
 	boolean: 5,
 	string: 6,
-	object: 7
+	object: 7,
+	entity: 8,
+	program: 9,
 };
 
 const Update = {
 	constant: 0,
-	frame: 1,
-	variable: 2
-}
+	variable: 1,
+	frame: 2,
+};
+
+const Expression = {
+	constant: 0,
+	// Standard functions, including built-in operators
+	platform: 1,
+	local: 2,
+	nonlocal: 3,
+	// An array of values
+	array: 4
+};
 
 const Duet = {
 	// A dictionary
@@ -34,14 +46,77 @@ const Duet = {
 	canvas: undefined,
 	files: {},
 	activeFile: undefined,
+	program: undefined,
+	entities: {},
 	// Our "standard library"
 	platform: {
+		image: {type: Type.type},
+		op: {
+			add:{
+				type: Type.function,
+				args: [Type.real, Type.real],
+				fn: (as, bs) => {
+					let result = [];
+					result.length = as.length;
+					for(let i = 0; i < as.length; i++) {
+						result[i] = a[i] + b[i];
+					}
+					return result;
+				}
+			},
+			sub:{
+				type: Type.function,
+				args: [Type.real, Type.real],
+				fn: (as, bs) => {
+					let result = [];
+					result.length = as.length;
+					for(let i = 0; i < as.length; i++) {
+						result[i] = a[i] - b[i];
+					}
+					return result;
+				}
+			},
+			mul:{
+				type: Type.function,
+				args: [Type.real, Type.real],
+				fn: (as, bs) => {
+					let result = [];
+					result.length = as.length;
+					for(let i = 0; i < as.length; i++) {
+						result[i] = a[i] * b[i];
+					}
+					return result;
+				}
+			},
+			div:{
+				type: Type.function,
+				args: [Type.real, Type.real],
+				fn: (as, bs) => {
+					let result = [];
+					result.length = as.length;
+					for(let i = 0; i < as.length; i++) {
+						result[i] = a[i] / b[i];
+					}
+					return result;
+				}
+			},
+		},
 		canvas: {
 			type: Type.struct,
 			update: Update.variable,
 			clearcolor: {
 				type: [Type.real, 3],
 				value: [1,1,1]
+			},
+			drawsprite: {
+				type: Type.function,
+				args: ['image', [Type.real, 2]],
+				fnSingleMulti: (image, positions) => {
+					let draw2d = Duet.canvas.getContext('2d');
+					for(let pos of positions) {
+						draw2d.drawImage(Duet.constants.player.sprite, pos[0], pos[1]);
+					}
+				}
 			}
 		},
 		paused: {
@@ -59,24 +134,27 @@ const Duet = {
 			update: Update.constant,
 			value: 33
 		},
-		loadsprite: {
-			type: Type.function,
-			update: Update.constant,
-			arguments: [Type.string],
-			return: Type.object,
-			fn: async (paths) => {
-				return await Promise.all(paths.map(async (path) => {
-					let response = await fetch(path);
-					if(!response.ok) {
-						return null;
-					}
-					const blob = await response.blob();
-					const url = URL.createObjectURL(blob);
-					const img = document.createElement('img');
-					img.src = url;
-					return img;
-				}));
-			}
+		file: {
+			Type: Type.struct,
+			loadsprite: {
+				type: Type.function,
+				update: Update.constant,
+				arguments: [Type.string],
+				return: 'image',
+				fn: async (paths) => {
+					return await Promise.all(paths.map(async (path) => {
+						let response = await fetch(path);
+						if(!response.ok) {
+							return null;
+						}
+						const blob = await response.blob();
+						const url = URL.createObjectURL(blob);
+						const img = document.createElement('img');
+						img.src = url;
+						return img;
+					}));
+				}
+			},
 		},
 		keyboard: {
 			type: Type.struct,
@@ -120,6 +198,12 @@ const Duet = {
 				}
 				return result;
 			}
+		},
+		create: {
+			type: Type.entity,
+			fnBatch: (type, count = 1) => {
+				return null;
+			}
 		}
 	},
 
@@ -150,7 +234,9 @@ const Duet = {
 	},
 
 	run: async () => {
-		let images = await Duet.platform.loadsprite.fn(['/assets/player.png']);
+		let program = Duet.files[Duet.program].analysis;
+
+		let images = await Duet.platform.file.loadsprite.fn(['/assets/player.png']);
 		Duet.canvas.onkeydown = Duet.press;
 		Duet.canvas.onkeyup = Duet.release;
 		Duet.constants = {
@@ -195,6 +281,7 @@ const Duet = {
 			draw2d.fillRect(0, 0, canvas.width, canvas.height);
 		}
 
+		// TODO: get from code
 		// Player updates
 		let pp = Duet.vars.player.position;
 		let kb = Duet.platform.keyboard;
@@ -205,8 +292,8 @@ const Duet = {
 				pp[i][0] + s * movement[0],
 				pp[i][1] + s * movement[1]
 			], [0,0], [Duet.canvas.width, Duet.canvas.height]);
-			draw2d.drawImage(Duet.constants.player.sprite, pp[i][0], pp[i][1]);
 		}
+		Duet.platform.canvas.drawsprite.fnSingleMulti(Duet.constants.player.sprite, pp)
 
 		Duet.platform.frame.value += 1;
 		if(!Duet.platform.paused.value) {
@@ -303,11 +390,156 @@ const Duet = {
 		}
 		Duet.highlight();
 	},
-	parse_all() {
+	parseAll() {
 		for(f in Duet.files) {
 			Duet.files[f].parseTree = Duet.parse(Duet.files[f]);
 		}
 		Duet.showParseResults();
+	},
+	analyzeAll() {
+		Duet.program = null;
+		Duet.entities = {};
+
+		const testAnalysis = {
+			'/duet/game.duet': {
+				type: [Type.program, 'game'],
+				constant: {
+					player: {
+						type: [Type.entity, 'player'],
+						value: {
+							expType: Expression.platform,
+							ref: Duet.platform.create,
+							args: ['player']
+						}
+					}
+				}
+			},
+			'/duet/player.duet': {
+				type: [Type.entity, 'player'],
+				constant: {
+					speed: {
+						type: Type.real,
+						value: {
+							expType: Expression.constant,
+							value: 10.0
+						}
+					},
+					sprite: {
+						type: 'image',
+						value: {
+							expType: Expression.platform,
+							ref: Duet.platform.loadsprite,
+							args: ['assets/player.png']
+						}
+					},
+				},
+				global: {
+					movement: {
+						type: [Type.real, 2],
+						update: Update.frame,
+						value: {
+							expType: Expression.array,
+							items: [
+								{
+									expType: Expression.platform,
+									ref: Duet.platform.op.sub,
+									args: [
+										{expType: Expression.platform, ref: Duet.platform.keyboard.right},
+										{expType: Expression.platform, ref: Duet.platform.keyboard.left},
+									]
+								},
+								{
+									expType: Expression.platform,
+									ref: Duet.platform.op.sub,
+									args: [
+										{expType: Expression.platform, ref: Duet.platform.keyboard.down},
+										{expType: Expression.platform, ref: Duet.platform.keyboard.up},
+									]
+								}
+							]
+						}
+					}
+				},
+				instance: {
+					position: {
+						type: [Type.real, 2],
+						update: Update.frame,
+						// Initial values are unique to instance variables
+						initial: {
+							expType: Expression.platform,
+							ref: Duet.platform.op.div,
+							args: [
+								{
+									expType: Expression.platform,
+									ref: Duet.platform.canvas.size
+								},
+								2
+							]
+						},
+						value: {
+							expType: Expression.platform,
+							ref: Duet.platform.op.add,
+							args: [
+								{
+									expType: Expression.local,
+									name: 'position'
+								},
+								{
+									expType: Expression.platform,
+									ref: Duet.platform.op.mul,
+									args: [
+										{
+											expType: Expression.local,
+											name: 'movement'
+										},
+										{
+											expType: Expression.local,
+											name: 'speed'
+										}
+									]
+								}
+							]
+						}
+					}
+				},
+				events: [
+					{
+						condition: {
+							expType: Expression.local,
+							name: 'position'
+						},
+						messages: {
+							expType: Expression.platform,
+							ref: Duet.platform.canvas.drawsprite,
+							args: [
+								{
+									expType: Expression.local,
+									name: 'sprite'
+								},
+								{
+									expType: Expression.local,
+									name: 'position'
+								}
+							]
+						}
+					}
+				]
+			}
+		}
+		for(f in Duet.files) {
+			let d = testAnalysis[f];
+			// let d = Duet.analyze(Duet.files[f]);
+			switch(d.type[0]) {
+			case Type.program:
+				if(Duet.program) console.error('Cannot have multiple programs.');
+				else Duet.program = f;
+				break;
+			case Type.entity:
+				Duet.entities[d.type[1]] = f;
+			}
+			console.log(d);
+			Duet.files[f].analysis = d;
+		}
 	},
 	compileAndRun: () => {
 		Duet.compile();
@@ -316,7 +548,8 @@ const Duet = {
 	compile: () => {
 		console.log('DUET: Compiling');
 		Duet.lex();
-		Duet.parse_all();
+		Duet.parseAll();
+		Duet.analyzeAll();
 	},
 	highlight:() => {
 		function span(parent, text, style) {
@@ -1052,6 +1285,37 @@ const Duet = {
 			return t;
 		}
 		return treeRecurse(f.parseTree.node);
+	},
+	/* Create the dependency tree and events.
+	All variables are in an acyclic tree, though they can depend on the value of the previous frame.
+	for example:
+		position = [0,0]; position + velocity
+	`position` depends on the value of `position` from the previous frame.
+	Every variable has the following:
+		type: Type or [Type, size] for arrays
+			Based on the type of the expression or the provided hint.
+		update: constant, frame, or variable
+			constant: This value never updates.
+			variable: the value can update, but not every frame
+			frame: the value refreshes every frame, even if it's the same value
+			The `update` of a variable is the max of 
+		storage: global or instance
+			global: there's only one copy of this value for the entire set of entities.
+			instance: a unique value is saved for every instance.
+				Any binding containing an initializer will be instance-storage.
+				Otherwise, they're all global.
+		value:
+			an expression for the value of the variable, also lists dependent variables
+	*/
+	analyze: (file) => {
+		let tree = file.parseTree.node;
+		// An array of the top-level variables and their dependencies
+		let variables = [];
+		let events = [];
+		return {
+			dependencies: variables,
+			events: events
+		}
 	}
 };
 
