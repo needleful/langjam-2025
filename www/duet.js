@@ -32,13 +32,52 @@ const Update = {
 
 const Expression = {
 	constant: 0,
-	// Standard functions, including built-in operators
 	platform: 1,
-	local: 2,
-	nonlocal: 3,
+	global: 2,
+	instance: 4,
+	nonlocal: 5,
 	// An array of values
-	array: 4
+	array: 6
 };
+
+const opCore {
+	plus: (a, b) => {
+		return a + b;
+	},
+	minus: (a, b) => {
+		return a - b;
+	},
+	times: (a, b) => {
+		return a*b;
+	},
+	divide: (a, b) => {
+		return a/b;
+	}
+}
+
+function opVV(op, v1, v2) {
+	let result = v1;
+	for(let i = 0; i < v1.length; i++) {
+		result[i] = op(v1[i], v2[i]);
+	}
+	return result;
+}
+
+function opVS(op, vector, scalar) {
+	let result = vector;
+	for(let i = 0; i < vector.length; i++) {
+		result[i] = op(vector[i], scalar);
+	}
+	return result;
+}
+
+function opSV(op, scalar, vector) {
+	let result = vector;
+	for(let i = 0; i < vector.length; i++) {
+		result[i] = op(scalar, vector[i]);
+	}
+	return result;
+}
 
 const Duet = {
 	// A dictionary
@@ -55,50 +94,42 @@ const Duet = {
 			add:{
 				type: Type.function,
 				args: [Type.real, Type.real],
-				fn: (as, bs) => {
-					let result = [];
-					result.length = as.length;
-					for(let i = 0; i < as.length; i++) {
-						result[i] = a[i] + b[i];
-					}
-					return result;
-				}
+				fnTable:[
+					(a, b) => opCore.plus(a, b),
+					(a, bs) => opSV(opCore.plus, a, bs),
+					(as, b) => opVS(opCore.plus, as, b),
+					(as, bs) => opVV(opCore.plus, as, bs),
+				]
 			},
 			sub:{
 				type: Type.function,
 				args: [Type.real, Type.real],
-				fn: (as, bs) => {
-					let result = [];
-					result.length = as.length;
-					for(let i = 0; i < as.length; i++) {
-						result[i] = a[i] - b[i];
-					}
-					return result;
-				}
+				fnTable:[
+					(a, b) => opCore.minus(a, b),
+					(a, bs) => opSV(opCore.minus, a, bs),
+					(as, b) => opVS(opCore.minus, as, b),
+					(as, bs) => opVV(opCore.minus, as, bs),
+				]
 			},
 			mul:{
 				type: Type.function,
 				args: [Type.real, Type.real],
-				fn: (as, bs) => {
-					let result = [];
-					result.length = as.length;
-					for(let i = 0; i < as.length; i++) {
-						result[i] = a[i] * b[i];
-					}
-					return result;
-				}
+				fnTable:[
+					(a, b) => opCore.times(a, b),
+					(a, bs) => opSV(opCore.times, a, bs),
+					(as, b) => opVS(opCore.times, as, b),
+					(as, bs) => opVV(opCore.times, as, bs),
+				]
 			},
 			div:{
 				type: Type.function,
 				args: [Type.real, Type.real],
-				fn: (as, bs) => {
-					let result = [];
-					result.length = as.length;
-					for(let i = 0; i < as.length; i++) {
-						result[i] = a[i] / b[i];
-					}
-					return result;
-				}
+				fnTable:[
+					(a, b) => opCore.divide(a, b),
+					(a, bs) => opSV(opCore.divide, a, bs),
+					(as, b) => opVS(opCore.divide, as, b),
+					(as, bs) => opVV(opCore.divide, as, bs),
+				]
 			},
 		},
 		canvas: {
@@ -108,13 +139,20 @@ const Duet = {
 				type: [Type.real, 3],
 				value: [1,1,1]
 			},
+			size: {
+				type: [Type.real, 2],
+				get:() => {
+					let c = Duet.canvas;
+					return [c.width, c.height];
+				}
+			},
 			drawsprite: {
 				type: Type.function,
 				args: ['image', [Type.real, 2]],
 				fnSingleMulti: (image, positions) => {
 					let draw2d = Duet.canvas.getContext('2d');
 					for(let pos of positions) {
-						draw2d.drawImage(Duet.constants.player.sprite, pos[0], pos[1]);
+						draw2d.drawImage(image, pos[0], pos[1]);
 					}
 				}
 			}
@@ -141,18 +179,19 @@ const Duet = {
 				update: Update.constant,
 				arguments: [Type.string],
 				return: 'image',
+				fnSingle: async (path) => {
+					let response = await fetch(path);
+					if(!response.ok) {
+						return null;
+					}
+					const blob = await response.blob();
+					const url = URL.createObjectURL(blob);
+					const img = document.createElement('img');
+					img.src = url;
+					return img;
+				},
 				fn: async (paths) => {
-					return await Promise.all(paths.map(async (path) => {
-						let response = await fetch(path);
-						if(!response.ok) {
-							return null;
-						}
-						const blob = await response.blob();
-						const url = URL.createObjectURL(blob);
-						const img = document.createElement('img');
-						img.src = url;
-						return img;
-					}));
+					return await Promise.all(paths.map(Duet.platform.file.fnSingle));
 				}
 			},
 		},
@@ -201,15 +240,51 @@ const Duet = {
 		},
 		create: {
 			type: Type.entity,
-			fnBatch: (type, count = 1) => {
-				return null;
+			fnSingle: async (type) => {
+				let ent = Duet.entityFiles[type];
+				if(!ent) {
+					console.error('No such entity: ', player);
+					return -1;
+				}
+				let script = Duet.files[ent].analysis;
+
+				let id = 0;
+				if(!(type in Duet.entities)) {
+					Duet.entities[type] = {
+						count: 0,
+						global: {},
+						instance: {}
+					}
+					for(let g in script.global) {
+						Duet.entities[type].global[g] = await Promise.resolve(
+							Duet.eval(type, id, script.global[g].value)
+						);
+					}
+					for(let i in script.instance) {
+						Duet.entities[type].instance[i] = [];
+					}
+				}
+				else{
+					id = Duet.entities[type].count
+				}
+
+				for(let i in script.instance) {
+					let val = null;
+					if('initial' in script.instance[i])
+					{
+						val = await Promise.resolve(Duet.eval(type, id, script.instance[i].initial));
+					}
+					Duet.entities[type].instance[i].push(val);
+				}
+				Duet.entities[type].count += 1;
+				return id;
 			}
 		}
 	},
 
 	// Set once per script
-	constants: {},
-	vars: {},
+	entities: {},
+	messages: [],
 	press: (e) => {
 		Duet._keySet(e.key, 1);
 	},
@@ -233,23 +308,50 @@ const Duet = {
 		Duet._keySet(e.key, 0);
 	},
 
-	run: async () => {
-		let program = Duet.files[Duet.program].analysis;
-
-		let images = await Duet.platform.file.loadsprite.fn(['/assets/player.png']);
-		Duet.canvas.onkeydown = Duet.press;
-		Duet.canvas.onkeyup = Duet.release;
-		Duet.constants = {
-			player:{
-				sprite: images[0],
-				speed: 10.0
+	eval: (type, id, exp) => {
+		if(typeof(exp) === 'object') {
+			switch(exp.expType) {
+			case Expression.array:
+				return exp.array.map((a) => Duet.eval(type, id, a));
+			case Expression.constant:
+				return exp.value;
+			case Expression.instance:
+				return entities[type].instance[exp.name][id];
+			case Expression.global:
+				return entities[type].global[exp.name][id];
 			}
-		};
-		Duet.vars = {
-			player:{
-				position: [[0,0]]
+			if('ref' in exp) {
+				if('args' in exp) {
+					// function
+					let a = exp.args.map((a) => Duet.eval(type, id, a));
+					if('fnSingle' in exp.ref) {
+						return exp.ref.fnSingle(...a);
+					}
+					else if('fn' in exp.ref) {
+						return exp.ref.fn(...exp.args.map((a) => [a]))[0];
+					}
+					else {
+						console.error('not implemented lol');
+					}
+				}
+				else if('get' in exp.ref) {
+					return exp.ref.get();
+				}
+				else {
+					return exp.ref.value;
+				}
 			}
 		}
+		else {
+			return exp;
+		}
+	},
+
+	run: async () => {
+		Duet.platform.create.fnSingle('game');
+
+		Duet.canvas.onkeydown = Duet.press;
+		Duet.canvas.onkeyup = Duet.release;
 
 		// TODO: get from code
 		let systemInitializers = [
@@ -283,17 +385,17 @@ const Duet = {
 
 		// TODO: get from code
 		// Player updates
-		let pp = Duet.vars.player.position;
+		let pp = Duet.entities.player.instance.position;
 		let kb = Duet.platform.keyboard;
 		let movement = [kb.right.value - kb.left.value, kb.down.value - kb.up.value];
 		for(let i = 0; i < pp.length; i++) {
-			let s = Duet.constants.player.speed;
+			let s = Duet.entities.player.global.speed;
 			pp[i] = Duet.platform.clamp.fn([
 				pp[i][0] + s * movement[0],
 				pp[i][1] + s * movement[1]
 			], [0,0], [Duet.canvas.width, Duet.canvas.height]);
 		}
-		Duet.platform.canvas.drawsprite.fnSingleMulti(Duet.constants.player.sprite, pp)
+		Duet.platform.canvas.drawsprite.fnSingleMulti(Duet.entities.player.global.sprite, pp);
 
 		Duet.platform.frame.value += 1;
 		if(!Duet.platform.paused.value) {
@@ -396,16 +498,19 @@ const Duet = {
 		}
 		Duet.showParseResults();
 	},
+	getScriptName: (analysis)=> {
+		return analysis.type[1];
+	},
 	analyzeAll() {
 		Duet.program = null;
-		Duet.entities = {};
+		Duet.entityFiles = {};
 
 		const testAnalysis = {
 			'/duet/game.duet': {
 				type: [Type.program, 'game'],
-				constant: {
+				global: {
 					player: {
-						type: [Type.entity, 'player'],
+						type: [Type.entity, 'myplayer'],
 						value: {
 							expType: Expression.platform,
 							ref: Duet.platform.create,
@@ -416,7 +521,7 @@ const Duet = {
 			},
 			'/duet/player.duet': {
 				type: [Type.entity, 'player'],
-				constant: {
+				global: {
 					speed: {
 						type: Type.real,
 						value: {
@@ -428,18 +533,16 @@ const Duet = {
 						type: 'image',
 						value: {
 							expType: Expression.platform,
-							ref: Duet.platform.loadsprite,
+							ref: Duet.platform.file.loadsprite,
 							args: ['assets/player.png']
 						}
 					},
-				},
-				global: {
 					movement: {
 						type: [Type.real, 2],
 						update: Update.frame,
 						value: {
 							expType: Expression.array,
-							items: [
+							array: [
 								{
 									expType: Expression.platform,
 									ref: Duet.platform.op.sub,
@@ -481,19 +584,19 @@ const Duet = {
 							ref: Duet.platform.op.add,
 							args: [
 								{
-									expType: Expression.local,
+									expType: Expression.instance,
 									name: 'position'
 								},
 								{
 									expType: Expression.platform,
-									ref: Duet.platform.op.mul,
+									ref: Duet.platform.opv.mul,
 									args: [
 										{
-											expType: Expression.local,
+											expType: Expression.global,
 											name: 'movement'
 										},
 										{
-											expType: Expression.local,
+											expType: Expression.global,
 											name: 'speed'
 										}
 									]
@@ -529,14 +632,11 @@ const Duet = {
 		for(f in Duet.files) {
 			let d = testAnalysis[f];
 			// let d = Duet.analyze(Duet.files[f]);
-			switch(d.type[0]) {
-			case Type.program:
+			if(d.type[0] == Type.program) {
 				if(Duet.program) console.error('Cannot have multiple programs.');
 				else Duet.program = f;
-				break;
-			case Type.entity:
-				Duet.entities[d.type[1]] = f;
 			}
+			Duet.entityFiles[d.type[1]] = f;
 			console.log(d);
 			Duet.files[f].analysis = d;
 		}
