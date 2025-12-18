@@ -3,7 +3,7 @@ entity player
 sprite = file.loadsprite('assets/player.png')
 speed = 10.0
 movement = [keyboard.right - keyboard.left, keyboard.down - keyboard.up]
-position = clamp(canvas.size/2; position + movement * speed, [0,0], canvas.size)
+position = canvas.size/2; clamp(position + movement * speed, [0,0], canvas.size)
 
 position
-	canvas.drawImage(sprite, position)
+	canvas.drawSprite(sprite, position)
