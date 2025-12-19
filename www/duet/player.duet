@@ -4,6 +4,7 @@ sprite = file.loadsprite('assets/player.png')
 speed = 10.0
 movement = [input.right - input.left, input.down - input.up]
 position = canvas.size/2; clamp(position + movement * speed, [0,0], canvas.size)
+frame = time.frame
 
-position
+frame
 	canvas.drawSprite(sprite, position)

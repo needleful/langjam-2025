@@ -14,14 +14,12 @@ function makeChild(parent, tag, attributes) {
 const Type = {
 	real: 0,
 	integer: 1,
-	struct: 2,
-	function: 3,
-	type: 4,
-	boolean: 5,
-	string: 6,
-	object: 7,
-	entity: 8,
-	program: 9,
+	function: 2,
+	type: 3,
+	boolean: 4,
+	string: 5,
+	entity: 6,
+	program: 7,
 };
 
 let TypeNames = {};
@@ -226,7 +224,6 @@ const Duet = {
 			}
 		},
 		canvas: {
-			type: Type.struct,
 			clearcolor: {
 				type: [Type.real, 3],
 				update: Update.once,
@@ -258,18 +255,19 @@ const Duet = {
 			update: Update.variable,
 			value: false
 		},
-		frame: {
-			type: Type.integer,
-			update: Update.frame,
-			value: 0
-		},
-		deltams: {
-			type: Type.integer,
-			update: Update.once,
-			value: 16
+		time: {
+			frame: {
+				type: Type.integer,
+				update: Update.frame,
+				value: 0
+			},
+			deltams: {
+				type: Type.integer,
+				update: Update.once,
+				value: 16
+			},
 		},
 		file: {
-			Type: Type.struct,
 			loadsprite: {
 				type: Type.function,
 				async: true,
@@ -294,7 +292,6 @@ const Duet = {
 			},
 		},
 		input: {
-			type: Type.struct,
 			right: {
 				type: Type.integer,
 				update: Update.frame,
@@ -501,7 +498,7 @@ const Duet = {
 		}
 		Duet.platform.create.c(Duet.program, 1);
 
-		setTimeout(Duet.frame, Duet.platform.deltams.value);
+		setTimeout(Duet.frame, Duet.platform.time.deltams.value);
 	},
 	frame: async () => {
 		// Begin the frame
@@ -580,9 +577,9 @@ const Duet = {
 		Duet.promises.results = [];
 
 		// End the frame
-		Duet.platform.frame.value += 1;
+		Duet.platform.time.frame.value += 1;
 		if(!Duet.getPaused()) {
-			setTimeout(Duet.frame, Duet.platform.deltams.value);
+			setTimeout(Duet.frame, Duet.platform.time.deltams.value);
 		}
 	},
 	setPaused: (p) => {
