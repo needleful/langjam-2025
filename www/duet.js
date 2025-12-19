@@ -30,54 +30,122 @@ const Update = {
 	frame: 2,
 };
 
-const Expression = {
+const VM = {
 	constant: 0,
-	platform: 1,
-	global: 2,
-	instance: 4,
-	nonlocal: 5,
-	// An array of values
-	array: 6
+	local: 1, 
+	call: 2,
+	callAsync: 3,
+	array: 4,
 };
 
-const opCore {
-	plus: (a, b) => {
+const VMLength = {
+	[[VM.constant]]: 2,
+	[[VM.local]]: 2, 
+	[[VM.call]]: 3,
+	[[VM.callAsync]]: 3,
+	[[VM.array]]: 2,
+};
+
+const opCore = {
+	add: (a, b) => {
 		return a + b;
 	},
-	minus: (a, b) => {
+	sub: (a, b) => {
 		return a - b;
 	},
-	times: (a, b) => {
+	mul: (a, b) => {
 		return a*b;
 	},
-	divide: (a, b) => {
+	div: (a, b) => {
 		return a/b;
+	},
+	clamp: (x, min, max) => {
+		if(x < min) {
+			return min;
+		}
+		if(x > max) {
+			return max;
+		}
+		return x;
 	}
 }
 
-function opVV(op, v1, v2) {
-	let result = v1;
-	for(let i = 0; i < v1.length; i++) {
-		result[i] = op(v1[i], v2[i]);
-	}
-	return result;
+function opVV(op) {
+	return function(as, bs) {
+		let r = [];
+		r.length = bs.length;
+		for(let i = 0; i < bs.length; i++) {
+			r[i] = op(as[i], bs[i]);
+		}
+		return r;
+	};
+}
+function opSV(op) {
+	return function(a, bs) {
+		let r = [];
+		r.length = bs.length;
+		for(let i = 0; i < bs.length; i++) {
+			r[i] = op(a, bs[i]);
+		}
+		return r;
+	};
+}
+function opVS(op) {
+	return function(as, b) {
+		let r = [];
+		r.length = as.length;
+		for(let i = 0; i < as.length; i++) {
+			r[i] = op(as[i], b);
+		}
+		return r;
+	};
 }
 
-function opVS(op, vector, scalar) {
-	let result = vector;
-	for(let i = 0; i < vector.length; i++) {
-		result[i] = op(vector[i], scalar);
+function binGen(op, reorder) {
+	let r = {
+		reorder: reorder,
+		ss: op,
+		sv: opSV(op),
+		vv: opVV(op)
 	}
-	return result;
+	if(reorder) {
+		r.vs = r.sv;
+	}
+	else {
+		r.vs = opVS(op)
+	}
+	return r
 }
 
-function opSV(op, scalar, vector) {
-	let result = vector;
-	for(let i = 0; i < vector.length; i++) {
-		result[i] = op(scalar, vector[i]);
+function unGen(op) {
+	let r = {
+		s: op,
+		v: (a) => a.map(op)
 	}
-	return result;
 }
+
+function opVSS(op) {
+	return function(as, b, c) {
+		let r = [];
+		r.length = as.length;
+		for(let i = 0; i < as.length; i++) {
+			r[i] = op(as[i], b, c);
+		}
+		return r;
+	}
+}
+
+function opVVV(op) {
+	return function(as, bs, cs) {
+		let r = [];
+		r.length = as.length;
+		for(let i = 0; i < as.length; i++) {
+			r[i] = op(as[i], bs[i], cs[i]);
+		}
+		return r;
+	}
+}
+
 
 const Duet = {
 	// A dictionary
@@ -87,50 +155,42 @@ const Duet = {
 	activeFile: undefined,
 	program: undefined,
 	entities: {},
+	promises: [],
 	// Our "standard library"
 	platform: {
 		image: {type: Type.type},
-		op: {
-			add:{
-				type: Type.function,
-				args: [Type.real, Type.real],
-				fnTable:[
-					(a, b) => opCore.plus(a, b),
-					(a, bs) => opSV(opCore.plus, a, bs),
-					(as, b) => opVS(opCore.plus, as, b),
-					(as, bs) => opVV(opCore.plus, as, bs),
-				]
-			},
-			sub:{
-				type: Type.function,
-				args: [Type.real, Type.real],
-				fnTable:[
-					(a, b) => opCore.minus(a, b),
-					(a, bs) => opSV(opCore.minus, a, bs),
-					(as, b) => opVS(opCore.minus, as, b),
-					(as, bs) => opVV(opCore.minus, as, bs),
-				]
-			},
-			mul:{
-				type: Type.function,
-				args: [Type.real, Type.real],
-				fnTable:[
-					(a, b) => opCore.times(a, b),
-					(a, bs) => opSV(opCore.times, a, bs),
-					(as, b) => opVS(opCore.times, as, b),
-					(as, bs) => opVV(opCore.times, as, bs),
-				]
-			},
-			div:{
-				type: Type.function,
-				args: [Type.real, Type.real],
-				fnTable:[
-					(a, b) => opCore.divide(a, b),
-					(a, bs) => opSV(opCore.divide, a, bs),
-					(as, b) => opVS(opCore.divide, as, b),
-					(as, bs) => opVV(opCore.divide, as, bs),
-				]
-			},
+		ops: {
+			add:binGen(opCore.add, true),
+			sub:binGen(opCore.sub, false),
+			mul:binGen(opCore.mul, true),
+			div:binGen(opCore.div, false),
+			clamp: {
+				sss: opCore.clamp,
+				svv: opVSS(opCore.clamp),
+				vvv: opVVV(opCore.clamp)
+			}
+		},
+		opv: {
+			addv:binGen(opVV(opCore.add), true),
+			subv:binGen(opVV(opCore.sub), false),
+			mulv:binGen(opVV(opCore.mul), true),
+			divv:binGen(opVV(opCore.div), false),
+
+			adds:binGen(opVS(opCore.add), true),
+			subs:binGen(opVS(opCore.sub), false),
+			muls:binGen(opVS(opCore.mul), true),
+			divs:binGen(opVS(opCore.div), false),
+
+			addsv:binGen(opSV(opCore.add), true),
+			subsv:binGen(opSV(opCore.sub), false),
+			mulsv:binGen(opSV(opCore.mul), true),
+			divsv:binGen(opSV(opCore.div), false),
+
+			clamp: {
+				sss: opVVV(opCore.clamp),
+				svv: opVSS(opVVV(opCore.clamp)),
+				vvv: opVVV(opVVV(opCore.clamp))
+			}
 		},
 		canvas: {
 			type: Type.struct,
@@ -146,16 +206,14 @@ const Duet = {
 					return [c.width, c.height];
 				}
 			},
-			drawsprite: {
-				type: Type.function,
-				args: ['image', [Type.real, 2]],
-				fnSingleMulti: (image, positions) => {
+			drawsprite: binGen(
+				(image, positions) => {
 					let draw2d = Duet.canvas.getContext('2d');
 					for(let pos of positions) {
 						draw2d.drawImage(image, pos[0], pos[1]);
 					}
-				}
-			}
+				}, false
+			)
 		},
 		paused: {
 			type: Type.boolean,
@@ -179,7 +237,7 @@ const Duet = {
 				update: Update.constant,
 				arguments: [Type.string],
 				return: 'image',
-				fnSingle: async (path) => {
+				s: async (path) => {
 					let response = await fetch(path);
 					if(!response.ok) {
 						return null;
@@ -190,7 +248,7 @@ const Duet = {
 					img.src = url;
 					return img;
 				},
-				fn: async (paths) => {
+				v: async (paths) => {
 					return await Promise.all(paths.map(Duet.platform.file.fnSingle));
 				}
 			},
@@ -215,69 +273,42 @@ const Duet = {
 				value: 0
 			}
 		},
-		clamp: {
-			type: Type.function,
-			arguments: [Type.real, Type.real, Type.real],
-			return: Type.real,
-			fn: (values, mins, maxs) => {
-				let result = [];
-				result.length = values.length;
-				for(let i = 0; i < values.length; i++) {
-					let value = values[i];
-					let min = mins[i];
-					let max = maxs[i];
-
-					if(value > max) {
-						result[i] = max;
-					}
-					else if(value < min) {
-						result[i] = min;
-					}
-					else result[i] = value;
-				}
-				return result;
-			}
-		},
 		create: {
 			type: Type.entity,
-			fnSingle: async (type) => {
-				let ent = Duet.entityFiles[type];
-				if(!ent) {
-					console.error('No such entity: ', player);
-					return -1;
-				}
-				let script = Duet.files[ent].analysis;
-
-				let id = 0;
-				if(!(type in Duet.entities)) {
-					Duet.entities[type] = {
-						count: 0,
-						global: {},
-						instance: {}
+			c: (type, count = 1, refer = false) => {
+				console.log(`Creating ${count} instances of: ${type}`);
+				let et = Duet.entities[type];
+				let startId = et.count + et.toCreate - et.toFree;
+				et.toCreate += count;
+				// Create a permanent reference to this node.
+				function getRef(id) {
+					if(et.freelist.length) {
+						let ref = et.freelist.pop();
+						et.references[ref] = id;
+						return ref;
 					}
-					for(let g in script.global) {
-						Duet.entities[type].global[g] = await Promise.resolve(
-							Duet.eval(type, id, script.global[g].value)
-						);
-					}
-					for(let i in script.instance) {
-						Duet.entities[type].instance[i] = [];
+					else {
+						let ref = et.references.length;
+						et.references.push(id);
+						return ref;
 					}
 				}
-				else{
-					id = Duet.entities[type].count
-				}
-
-				for(let i in script.instance) {
-					let val = null;
-					if('initial' in script.instance[i])
-					{
-						val = await Promise.resolve(Duet.eval(type, id, script.instance[i].initial));
+				if(refer) {
+					if(count == 1) {
+						return getRef(startId);
 					}
-					Duet.entities[type].instance[i].push(val);
+					else {
+						let refs = [];
+						refs.length = count;
+						for(let i = 0; i < count; i++) {
+							refs[i] = getRef(startId + i);
+						}
+						return refs;
+					}
 				}
-				Duet.entities[type].count += 1;
-				return id;
+				else {
+					return startId;
+				}
 			}
 		}
 	},
@@ -308,73 +339,124 @@ const Duet = {
 		Duet._keySet(e.key, 0);
 	},
 
-	eval: (type, id, exp) => {
-		if(typeof(exp) === 'object') {
-			switch(exp.expType) {
-			case Expression.array:
-				return exp.array.map((a) => Duet.eval(type, id, a));
-			case Expression.constant:
-				return exp.value;
-			case Expression.instance:
-				return entities[type].instance[exp.name][id];
-			case Expression.global:
-				return entities[type].global[exp.name][id];
+	instr: (type, stack, code, pointer) => {
+		let instr = code[pointer];
+		if(!(instr in VMLength)) {
+			console.error('Not an instruction:', instr, code, pointer);
+			return false;
+		}
+		function arg(i) {
+			return code[pointer + i];
+		}
+
+		switch(instr) {
+		case VM.constant: {
+			stack.push(arg(1));
+			break;
+		}
+		case VM.local: {
+			stack.push(entities[type].values[arg(1)]);
+			break;
+		}
+		case VM.call: {
+			let fn = arg(1);
+			let args = [];
+			args.length = arg(2);
+			for(let i = 0; i < args.length; i++) {
+				args[args.length - 1 - i] = stack.pop();
 			}
-			if('ref' in exp) {
-				if('args' in exp) {
-					// function
-					let a = exp.args.map((a) => Duet.eval(type, id, a));
-					if('fnSingle' in exp.ref) {
-						return exp.ref.fnSingle(...a);
-					}
-					else if('fn' in exp.ref) {
-						return exp.ref.fn(...exp.args.map((a) => [a]))[0];
-					}
-					else {
-						console.error('not implemented lol');
-					}
-				}
-				else if('get' in exp.ref) {
-					return exp.ref.get();
-				}
-				else {
-					return exp.ref.value;
-				}
+			stack.push(fn(...args));
+			break;
+		}
+		case VM.callAsync: {
+			let fn = arg(1);
+			let args = [];
+			args.length = arg(2);
+			for(let i = 0; i < args.length; i++) {
+				args[args.length - 1 - i] = stack.pop();
+			}
+			let promise = fn(...args);
+			Duet.promises.push(promise);
+			stack.push(promise);
+			break;
+		}
+		case VM.array: {
+			let result = [];
+			result.length = arg(1);
+			for(let i = 0; i < result.length; i++) {
+				result[args.length - 1 - i] = stack.pop();
+			}
+			stack.push(result);
+			break;
+		}
+		default:
+			console.error('Not an instruction: ', instr);
+			return false;
+		}
+		return true;
+	},
+
+	eval: (type, code) => {
+		let stack = [];
+		for(
+			let pointer = 0;
+			pointer < code.length;
+			pointer += VMLength[code[pointer]]
+		) {
+			if(!Duet.instr(type, stack, code, pointer))
+			{
+				break;
 			}
 		}
+		if(stack.length) {
+			return stack.pop();
+		}
 		else {
-			return exp;
+			return null;
+		}
+	},
+
+	allocate: (typename) => {
+		if(!(typename in Duet.entities)) {
+			console.error('No such entity type: ', typename);
+		}
+		let e = Duet.entities[typename];
+		for(let alloc of e.compute.allocation) {
+			let varname = alloc[0];
+			e.values[varname] = Duet.eval(typename, alloc[1]);
 		}
 	},
 
 	run: async () => {
-		Duet.platform.create.fnSingle('game');
-
+		// Default events
 		Duet.canvas.onkeydown = Duet.press;
 		Duet.canvas.onkeyup = Duet.release;
 
-		// TODO: get from code
-		let systemInitializers = [
-			['canvas', 'clearcolor', [0,0,0]]
-		];
+		// Creation of the program and loading entity types
+		for(let type in Duet.entities) {
+			Duet.allocate(type)
+		}
+		Duet.platform.create.c(Duet.program, 1);
 
-		for(let init of systemInitializers) {
-			let struct = Duet.platform;
-			let lastIndex = init.length-1;
-			for(let i = 0; i < lastIndex; i++) {
-				struct = struct[init[i]];
+		// Do a whole big process of setting all the
+		// 
+		if(Duet.promises.length) {
+			await Promise.all(Duet.promises);
+			for(let t in Duet.entities) {
+				let type = Duet.entities[t];
+				for(let v in type.values) {
+					if(typeof(type.values[v]) === 'object' && 'then' in type.values[v]) {
+						type.values[v] = type.values[v].value;
+					}
+				}
 			}
-			console.log(init);
-			if('set' in struct) {
-				struct.set(init[lastIndex]);
-			}
-			else{
-				struct.value = init[lastIndex];
-			}
+			Duet.promises = [];
 		}
 		setTimeout(Duet.frame, Duet.platform.deltams.value);
 	},
 	frame: () => {
+		// Begin the frame
+		let messages = [];
 		let canvas = Duet.canvas;
 		let draw2d = canvas.getContext('2d');
 		{
@@ -383,20 +465,25 @@ const Duet = {
 			draw2d.fillRect(0, 0, canvas.width, canvas.height);
 		}
 
-		// TODO: get from code
-		// Player updates
-		let pp = Duet.entities.player.instance.position;
-		let kb = Duet.platform.keyboard;
-		let movement = [kb.right.value - kb.left.value, kb.down.value - kb.up.value];
-		for(let i = 0; i < pp.length; i++) {
-			let s = Duet.entities.player.global.speed;
-			pp[i] = Duet.platform.clamp.fn([
-				pp[i][0] + s * movement[0],
-				pp[i][1] + s * movement[1]
-			], [0,0], [Duet.canvas.width, Duet.canvas.height]);
+		for(let typename in Duet.entities) {
+			// Entity creation
+			let type = Duet.entities[typename];
+			type.count -= type.toFree;
+			if(type.toCreate) {
+				for(let val of type.compute.creation) {
+					let valname = val[0];
+					type.values[valname].length += type.toCreate;
+					let value =  Duet.eval(type, val[1]);
+					// TODO: only run on a subset of the values
+					type.values[valname] = value;
+					console.log(`Creation: ${typename}.${valname}: ${value}`); 
+				}
+			}
+			type.toFree = 0;
+			type.toCreate = 0;
 		}
-		Duet.platform.canvas.drawsprite.fnSingleMulti(Duet.entities.player.global.sprite, pp);
 
+		// End the frame
 		Duet.platform.frame.value += 1;
 		if(!Duet.platform.paused.value) {
 			setTimeout(Duet.frame, Duet.platform.deltams.value);
@@ -504,141 +591,129 @@ const Duet = {
 	analyzeAll() {
 		Duet.program = null;
 		Duet.entityFiles = {};
+		Duet.entities = {};
 
 		const testAnalysis = {
 			'/duet/game.duet': {
 				type: [Type.program, 'game'],
-				global: {
-					player: {
-						type: [Type.entity, 'myplayer'],
-						value: {
-							expType: Expression.platform,
-							ref: Duet.platform.create,
-							args: ['player']
-						}
-					}
-				}
+				source: '/duet/game.duet',
+				count: 0,
+				// Number to create/free next frame
+				toCreate: 0,
+				toFree: 0,
+				compute: {
+					allocation: [
+						['myplayer', [
+							VM.constant, 'player',
+							VM.constant, 1,
+							VM.constant, true,
+							VM.call, Duet.platform.create.c, 3
+						]]
+					],
+					creation: [],
+					frame: []
+				},
+				values: {
+					myplayer: null,
+				},
+				events: {},
+				references: [],
+				freelist: []
 			},
 			'/duet/player.duet': {
 				type: [Type.entity, 'player'],
-				global: {
-					speed: {
-						type: Type.real,
-						value: {
-							expType: Expression.constant,
-							value: 10.0
-						}
-					},
-					sprite: {
-						type: 'image',
-						value: {
-							expType: Expression.platform,
-							ref: Duet.platform.file.loadsprite,
-							args: ['assets/player.png']
-						}
-					},
-					movement: {
-						type: [Type.real, 2],
-						update: Update.frame,
-						value: {
-							expType: Expression.array,
-							array: [
-								{
-									expType: Expression.platform,
-									ref: Duet.platform.op.sub,
-									args: [
-										{expType: Expression.platform, ref: Duet.platform.keyboard.right},
-										{expType: Expression.platform, ref: Duet.platform.keyboard.left},
-									]
-								},
-								{
-									expType: Expression.platform,
-									ref: Duet.platform.op.sub,
-									args: [
-										{expType: Expression.platform, ref: Duet.platform.keyboard.down},
-										{expType: Expression.platform, ref: Duet.platform.keyboard.up},
-									]
-								}
-							]
-						}
-					}
+				source: '/duet/player.duet',
+				count: 0,
+				// Number to create/free next frame
+				toCreate: 0,
+				toFree: 0,
+				// Describes when to recompute each value, and the order to do it.
+				compute: {
+					// When the entity class is allocated for the first time
+					allocation: [
+						// Values are evaluated by a list of instructions on a stack-based VM thing
+						['sprite', [
+							// VM.call, function reference, number of arguments (or 0 if omitted)
+							VM.constant, 'assets/player.png',
+							// VM.constant, value
+							VM.callAsync, Duet.platform.file.loadsprite.s, 1
+						]],
+						['speed', [VM.constant, 10.0]]
+					],
+					// Computed upon entity is creation, for just the created value
+					creation: [
+						['position', [
+							VM.call, Duet.platform.canvas.size.get, 0,
+							VM.constant, 2,
+							VM.call, Duet.platform.opv.divs.ss, 2
+						]]
+					],
+					// Changes every frame, for every entity
+					frame: [
+						['movement', [
+							VM.call, Duet.platform.keyboard.right.get, 0,
+							VM.call, Duet.platform.keyboard.left.get, 0,
+							VM.call, Duet.platform.ops.sub.ss, 2,
+							
+							VM.call, Duet.platform.keyboard.down.get, 0,
+							VM.call, Duet.platform.keyboard.up.get, 0,
+							VM.call, Duet.platform.ops.sub.ss, 0,
+
+							VM.array, 2
+						]], 
+						['position', [
+							VM.local, 'position',
+							VM.local, 'movement',
+							VM.local, 'speed',
+							VM.call, Duet.platform.opv.muls.ss, 2,
+							VM.call, Duet.platform.opv.addv.vs, 2,
+							VM.constant, [0,0],
+							VM.call, Duet.platform.canvas.size.get, 0,
+							VM.call, Duet.platform.opv.clamp.vss, 3
+						]]
+					],
+					// A set of variables that only change when their dependencies change, which is not every frame
+					// none for this example
+					listening: [],
+					// Variables that receive their value as a message
+					// None for this example
+					message: [],
 				},
-				instance: {
-					position: {
-						type: [Type.real, 2],
-						update: Update.frame,
-						// Initial values are unique to instance variables
-						initial: {
-							expType: Expression.platform,
-							ref: Duet.platform.op.div,
-							args: [
-								{
-									expType: Expression.platform,
-									ref: Duet.platform.canvas.size
-								},
-								2
-							]
-						},
-						value: {
-							expType: Expression.platform,
-							ref: Duet.platform.op.add,
-							args: [
-								{
-									expType: Expression.instance,
-									name: 'position'
-								},
-								{
-									expType: Expression.platform,
-									ref: Duet.platform.opv.mul,
-									args: [
-										{
-											expType: Expression.global,
-											name: 'movement'
-										},
-										{
-											expType: Expression.global,
-											name: 'speed'
-										}
-									]
-								}
-							]
-						}
-					}
+				values: {
+					// Globals are initialized to default values based on type
+					speed: 0.0,
+					sprite: null,
+					movement: [0,0],
+					// Instance variables start as an empty array
+					position: []
 				},
-				events: [
-					{
-						condition: {
-							expType: Expression.local,
-							name: 'position'
-						},
-						messages: {
-							expType: Expression.platform,
-							ref: Duet.platform.canvas.drawsprite,
-							args: [
-								{
-									expType: Expression.local,
-									name: 'sprite'
-								},
-								{
-									expType: Expression.local,
-									name: 'position'
-								}
-							]
-						}
-					}
-				]
+				events: {
+					position: [
+						{do: [
+							VM.local, 'sprite', 
+							VM.local, 'position',
+							VM.call, Duet.platform.canvas.drawsprite.sv, 2,
+						]}
+					]
+				},
+				// External references will need a layer of indirection, since they can be reorganized when objects are removed
+				// This emulates the reference from the game to the player
+				references: [0],
+				// Free references. Indeces into a list of indeces into the entities table
+				freelist: []
 			}
-		}
+		};
+
 		for(f in Duet.files) {
 			let d = testAnalysis[f];
 			// let d = Duet.analyze(Duet.files[f]);
+			let typeName = d.type[1];
 			if(d.type[0] == Type.program) {
 				if(Duet.program) console.error('Cannot have multiple programs.');
-				else Duet.program = f;
+				else Duet.program = typeName;
 			}
-			Duet.entityFiles[d.type[1]] = f;
-			console.log(d);
-			Duet.files[f].analysis = d;
+			Duet.files[f].name = d;
+			Duet.entities[typeName] = d;
 		}
 	},
 	compileAndRun: () => {
