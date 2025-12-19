@@ -272,6 +272,7 @@ const Duet = {
 			Type: Type.struct,
 			loadsprite: {
 				type: Type.function,
+				async: true,
 				update: Update.once,
 				args: [Type.string],
 				return: 'image',
@@ -1752,7 +1753,7 @@ const Duet = {
 					if(ac.ref.args.length) {
 						err(`Function called without arguments, but it expects ${ac.ref.args.length}`, acNode);
 					}
-					let code = defaultCode(ac.ref.return, [VM.call.s, ac.ref, 0]);
+					let code = defaultCode(ac.ref.return, [VM.call, ac.ref.s, 0]);
 					code.update = v.update || Update.once;
 					return code;
 				}
@@ -1849,7 +1850,13 @@ const Duet = {
 					update = Math.max(argCode.update, update);
 					storage = Math.max(argCode.storage, storage);
 				}
-				code.push([VM.call, ref, args.children.length]);
+				if(ref.async) {
+					code.push([VM.callAsync, ref, args.children.length]);
+				}
+				else {
+					code.push([VM.call, ref, args.children.length]);
+				}
+
 				return {
 					type: ref.return,
 					update: ref.update || Update.once,
