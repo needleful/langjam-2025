@@ -36,6 +36,7 @@ const VM = {
 	call: 2,
 	callAsync: 3,
 	array: 4,
+	read: 5,
 };
 
 const VMLength = {
@@ -44,6 +45,7 @@ const VMLength = {
 	[[VM.call]]: 3,
 	[[VM.callAsync]]: 3,
 	[[VM.array]]: 2,
+	[[VM.read]]: 2,
 };
 
 const opCore = {
@@ -101,20 +103,13 @@ function opVS(op) {
 	};
 }
 
-function binGen(op, reorder) {
-	let r = {
-		reorder: reorder,
+function binGen(op) {
+	return {
 		ss: op,
 		sv: opSV(op),
-		vv: opVV(op)
+		vv: opVV(op),
+		vs: opVS(op)
 	}
-	if(reorder) {
-		r.vs = r.sv;
-	}
-	else {
-		r.vs = opVS(op)
-	}
-	return r
 }
 
 function unGen(op) {
@@ -155,40 +150,43 @@ const Duet = {
 	activeFile: undefined,
 	program: undefined,
 	entities: {},
-	promises: [],
+	promises: {
+		waiting: [],
+		results: []
+	},
 	// Our "standard library"
 	platform: {
 		image: {type: Type.type},
 		ops: {
-			add:binGen(opCore.add, true),
-			sub:binGen(opCore.sub, false),
-			mul:binGen(opCore.mul, true),
-			div:binGen(opCore.div, false),
+			add:binGen(opCore.add),
+			sub:binGen(opCore.sub),
+			mul:binGen(opCore.mul),
+			div:binGen(opCore.div),
 			clamp: {
 				sss: opCore.clamp,
-				svv: opVSS(opCore.clamp),
+				vss: opVSS(opCore.clamp),
 				vvv: opVVV(opCore.clamp)
 			}
 		},
 		opv: {
-			addv:binGen(opVV(opCore.add), true),
-			subv:binGen(opVV(opCore.sub), false),
-			mulv:binGen(opVV(opCore.mul), true),
-			divv:binGen(opVV(opCore.div), false),
+			addv:binGen(opVV(opCore.add)),
+			subv:binGen(opVV(opCore.sub)),
+			mulv:binGen(opVV(opCore.mul)),
+			divv:binGen(opVV(opCore.div)),
 
-			adds:binGen(opVS(opCore.add), true),
-			subs:binGen(opVS(opCore.sub), false),
-			muls:binGen(opVS(opCore.mul), true),
-			divs:binGen(opVS(opCore.div), false),
+			adds:binGen(opVS(opCore.add)),
+			subs:binGen(opVS(opCore.sub)),
+			muls:binGen(opVS(opCore.mul)),
+			divs:binGen(opVS(opCore.div)),
 
-			addsv:binGen(opSV(opCore.add), true),
-			subsv:binGen(opSV(opCore.sub), false),
-			mulsv:binGen(opSV(opCore.mul), true),
-			divsv:binGen(opSV(opCore.div), false),
+			addsv:binGen(opSV(opCore.add)),
+			subsv:binGen(opSV(opCore.sub)),
+			mulsv:binGen(opSV(opCore.mul)),
+			divsv:binGen(opSV(opCore.div)),
 
 			clamp: {
 				sss: opVVV(opCore.clamp),
-				svv: opVSS(opVVV(opCore.clamp)),
+				vss: opVSS(opVVV(opCore.clamp)),
 				vvv: opVVV(opVVV(opCore.clamp))
 			}
 		},
@@ -206,14 +204,18 @@ const Duet = {
 					return [c.width, c.height];
 				}
 			},
-			drawsprite: binGen(
-				(image, positions) => {
-					let draw2d = Duet.canvas.getContext('2d');
+			drawsprite: {
+				sv: (image, positions) => {
 					for(let pos of positions) {
-						draw2d.drawImage(image, pos[0], pos[1]);
+						//console.log('Drawing:', image, pos, [image.width, image.height]);
+						let center = [image.width/2, image.height/2];
+						Duet.draw2d.drawImage(
+							image, pos[0] - center[0], pos[1] - center[1],
+							image.width, image.height
+						);
 					}
-				}, false
-			)
+				}
+			}
 		},
 		paused: {
 			type: Type.boolean,
@@ -228,7 +230,7 @@ const Duet = {
 		deltams: {
 			type: Type.integer,
 			update: Update.constant,
-			value: 33
+			value: 16
 		},
 		file: {
 			Type: Type.struct,
@@ -237,23 +239,24 @@ const Duet = {
 				update: Update.constant,
 				arguments: [Type.string],
 				return: 'image',
-				s: async (path) => {
-					let response = await fetch(path);
-					if(!response.ok) {
-						return null;
-					}
-					const blob = await response.blob();
-					const url = URL.createObjectURL(blob);
-					const img = document.createElement('img');
-					img.src = url;
-					return img;
-				},
-				v: async (paths) => {
-					return await Promise.all(paths.map(Duet.platform.file.fnSingle));
+				s: (path) => {
+					return new Promise((resolve, reject) => {
+						const img = new Image();
+						img.onload = () => {
+							console.log('Image Loaded:', path);
+							document.getElementById('loaded-images').appendChild(img);
+							resolve(img);
+						}
+						img.onerror = () => {
+							console.error('Failed to load image: ', path);
+							reject();
+						}
+						img.src = path;
+					});
 				}
 			},
 		},
-		keyboard: {
+		input: {
 			type: Type.struct,
 			update: Update.frame,
 			right: {
@@ -275,9 +278,9 @@ const Duet = {
 		},
 		create: {
 			type: Type.entity,
-			c: (type, count = 1, refer = false) => {
-				console.log(`Creating ${count} instances of: ${type}`);
-				let et = Duet.entities[type];
+			c: (typename, count = 1, refer = false) => {
+				console.log(`Creating ${count} instances of: ${typename}`);
+				let et = Duet.entities[typename];
 				let startId = et.count + et.toCreate - et.toFree;
 				et.toCreate += count;
 				// Create a permanent reference to this node.
@@ -322,16 +325,16 @@ const Duet = {
 	_keySet: (key, val) => {
 		switch(key) {
 		case "ArrowUp":
-			Duet.platform.keyboard.up.value = val;
+			Duet.platform.input.up.value = val;
 			break;
 		case "ArrowDown":
-			Duet.platform.keyboard.down.value = val;
+			Duet.platform.input.down.value = val;
 			break;
 		case "ArrowLeft":
-			Duet.platform.keyboard.left.value = val;
+			Duet.platform.input.left.value = val;
 			break;
 		case "ArrowRight":
-			Duet.platform.keyboard.right.value = val;
+			Duet.platform.input.right.value = val;
 			break;
 		}
 	},
@@ -339,7 +342,7 @@ const Duet = {
 		Duet._keySet(e.key, 0);
 	},
 
-	instr: (type, stack, code, pointer) => {
+	instr: (typename, stack, code, pointer) => {
 		let instr = code[pointer];
 		if(!(instr in VMLength)) {
 			console.error('Not an instruction:', instr, code, pointer);
@@ -355,11 +358,20 @@ const Duet = {
 			break;
 		}
 		case VM.local: {
-			stack.push(entities[type].values[arg(1)]);
+			stack.push(Duet.entities[typename].values[arg(1)]);
+			break;
+		}
+		// A refernce to a platform variable
+		case VM.read: {
+			stack.push(arg(1).value);
 			break;
 		}
 		case VM.call: {
 			let fn = arg(1);
+			if(typeof(fn) !== 'function') {
+				console.error('Expected a function: ', fn, code, pointer);
+				return false;
+			}
 			let args = [];
 			args.length = arg(2);
 			for(let i = 0; i < args.length; i++) {
@@ -370,21 +382,28 @@ const Duet = {
 		}
 		case VM.callAsync: {
 			let fn = arg(1);
+			if(typeof(fn) !== 'function') {
+				console.error('Expected a function: ', fn, code, pointer);
+				return false;
+			}
 			let args = [];
 			args.length = arg(2);
 			for(let i = 0; i < args.length; i++) {
 				args[args.length - 1 - i] = stack.pop();
 			}
 			let promise = fn(...args);
-			Duet.promises.push(promise);
-			stack.push(promise);
+			let id = Duet.promises.length;
+			Duet.promises.waiting.push(promise.then((value) => {
+				Duet.promises.results[id] = value;
+			}));
+			stack.push({_promise: id});
 			break;
 		}
 		case VM.array: {
 			let result = [];
 			result.length = arg(1);
 			for(let i = 0; i < result.length; i++) {
-				result[args.length - 1 - i] = stack.pop();
+				result[result.length - 1 - i] = stack.pop();
 			}
 			stack.push(result);
 			break;
@@ -396,14 +415,17 @@ const Duet = {
 		return true;
 	},
 
-	eval: (type, code) => {
+	eval: (typename, code) => {
+		if(typeof(typename) != 'string') {
+			console.error('Typename expected');
+		}
 		let stack = [];
 		for(
 			let pointer = 0;
 			pointer < code.length;
 			pointer += VMLength[code[pointer]]
 		) {
-			if(!Duet.instr(type, stack, code, pointer))
+			if(!Duet.instr(typename, stack, code, pointer))
 			{
 				break;
 			}
@@ -427,7 +449,8 @@ const Duet = {
 		}
 	},
 
-	run: async () => {
+	run: () => {
+		Duet.draw2d = Duet.canvas.getContext('2d');
 		// Default events
 		Duet.canvas.onkeydown = Duet.press;
 		Duet.canvas.onkeyup = Duet.release;
@@ -438,54 +461,87 @@ const Duet = {
 		}
 		Duet.platform.create.c(Duet.program, 1);
 
-		// Do a whole big process of setting all the
-		// 
-		if(Duet.promises.length) {
-			await Promise.all(Duet.promises);
-			for(let t in Duet.entities) {
-				let type = Duet.entities[t];
-				for(let v in type.values) {
-					if(typeof(type.values[v]) === 'object' && 'then' in type.values[v]) {
-						type.values[v] = type.values[v].value;
-					}
-				}
-			}
-			Duet.promises = [];
-		}
 		setTimeout(Duet.frame, Duet.platform.deltams.value);
 	},
-	frame: () => {
+	frame: async () => {
 		// Begin the frame
+		if(Duet.promises.waiting.length) {
+			await Promise.all(Duet.promises.waiting);
+		}
 		let messages = [];
-		let canvas = Duet.canvas;
-		let draw2d = canvas.getContext('2d');
 		{
 			let cc = Duet.platform.canvas.clearcolor.value;
-			draw2d.fillstyle = `rgb(${255*cc[0]}, ${255*cc[1]}, ${255*cc[2]})`;
-			draw2d.fillRect(0, 0, canvas.width, canvas.height);
+			Duet.draw2d.fillstyle = `rgb(${255*cc[0]}, ${255*cc[1]}, ${255*cc[2]})`;
+			Duet.draw2d.fillRect(0, 0, Duet.canvas.width, Duet.canvas.height);
 		}
 
 		for(let typename in Duet.entities) {
 			// Entity creation
 			let type = Duet.entities[typename];
+
+			if(Duet.promises.waiting.length) {
+				for(let v in type.values) {
+					if(typeof(type.values[v]) === 'object' && '_promise' in type.values[v]) {
+						let id = type.values[v]._promise;
+						type.values[v] = Duet.promises.results[id];
+						console.log(`Promise fulfilled: ${typename}.${v} = ${type.values[v]}`);
+					}
+				}
+			}
+
 			type.count -= type.toFree;
 			if(type.toCreate) {
 				for(let val of type.compute.creation) {
 					let valname = val[0];
+					let start = type.values[valname].length;
 					type.values[valname].length += type.toCreate;
-					let value =  Duet.eval(type, val[1]);
-					// TODO: only run on a subset of the values
-					type.values[valname] = value;
-					console.log(`Creation: ${typename}.${valname}: ${value}`); 
+					let init = Duet.eval(typename, val[1]);
+					for(let i = start; i < start + type.toCreate; i++) {
+						let val = init;
+						if(Array.isArray(init)) {
+							val = [...init];
+						}
+						type.values[valname][i] = val;
+					}
+					console.log(`Creation: ${typename}.${valname}: ${type.values[valname]}`); 
 				}
 			}
 			type.toFree = 0;
 			type.toCreate = 0;
+
+			for(let t in Duet.entities) {
+				let type = Duet.entities[t];
+			}
+
+			// Running in the frame
+			for(let val of type.compute.frame) {
+				let valname = val[0];
+				let value = Duet.eval(typename, val[1]);
+				type.values[valname] = value;
+				if(valname in type.events) {
+					let events = type.events[valname];
+					for(let event of events) {
+						if('condition' in event) {
+							let val = Duet.eval(typename, event.condition);
+							if(!val) {
+								continue;
+							}
+						}
+						messages.push([typename, event.do]);
+					}
+				}
+			}
 		}
+		for(let message of messages) {
+			Duet.eval(message[0], message[1]);
+		}
+		messages = [];
+		Duet.promises.waiting = [];
+		Duet.promises.results = [];
 
 		// End the frame
 		Duet.platform.frame.value += 1;
-		if(!Duet.platform.paused.value) {
+		if(!Duet.getPaused()) {
 			setTimeout(Duet.frame, Duet.platform.deltams.value);
 		}
 	},
@@ -634,11 +690,11 @@ const Duet = {
 						// Values are evaluated by a list of instructions on a stack-based VM thing
 						['sprite', [
 							// VM.call, function reference, number of arguments (or 0 if omitted)
-							VM.constant, 'assets/player.png',
+							VM.constant, '/assets/player.png',
 							// VM.constant, value
 							VM.callAsync, Duet.platform.file.loadsprite.s, 1
 						]],
-						['speed', [VM.constant, 10.0]]
+						['speed', [VM.constant, 5.0]]
 					],
 					// Computed upon entity is creation, for just the created value
 					creation: [
@@ -651,22 +707,22 @@ const Duet = {
 					// Changes every frame, for every entity
 					frame: [
 						['movement', [
-							VM.call, Duet.platform.keyboard.right.get, 0,
-							VM.call, Duet.platform.keyboard.left.get, 0,
+							VM.read, Duet.platform.input.right,
+							VM.read, Duet.platform.input.left,
 							VM.call, Duet.platform.ops.sub.ss, 2,
 							
-							VM.call, Duet.platform.keyboard.down.get, 0,
-							VM.call, Duet.platform.keyboard.up.get, 0,
-							VM.call, Duet.platform.ops.sub.ss, 0,
+							VM.read, Duet.platform.input.down,
+							VM.read, Duet.platform.input.up,
+							VM.call, Duet.platform.ops.sub.ss, 2,
 
 							VM.array, 2
 						]], 
 						['position', [
-							VM.local, 'position',
 							VM.local, 'movement',
 							VM.local, 'speed',
 							VM.call, Duet.platform.opv.muls.ss, 2,
-							VM.call, Duet.platform.opv.addv.vs, 2,
+							VM.local, 'position',
+							VM.call, Duet.platform.opv.addv.sv, 2,
 							VM.constant, [0,0],
 							VM.call, Duet.platform.canvas.size.get, 0,
 							VM.call, Duet.platform.opv.clamp.vss, 3
