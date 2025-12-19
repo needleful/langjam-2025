@@ -15,7 +15,7 @@ const Type = {
 	real: 0,
 	integer: 1,
 	struct: 2,
-	functionType: 3,
+	function: 3,
 	type: 4,
 	boolean: 5,
 	string: 6,
@@ -24,11 +24,23 @@ const Type = {
 	program: 9,
 };
 
+let TypeNames = {};
+
 const Update = {
-	constant: 0,
+	once: 0,
 	variable: 1,
-	frame: 2,
+	message: 2,
+	frame: 3,
 };
+
+let UpdateNames = {};
+
+const Storage = {
+	global: 0,
+	instance: 1,
+};
+
+let StorageNames = {};
 
 const VM = {
 	constant: 0,
@@ -38,6 +50,8 @@ const VM = {
 	array: 4,
 	read: 5,
 };
+
+let VMNames = {};
 
 const VMLength = {
 	[[VM.constant]]: 2,
@@ -103,8 +117,11 @@ function opVS(op) {
 	};
 }
 
-function binGen(op) {
+function binGen(type, op) {
 	return {
+		type: Type.function,
+		return: type,
+		args: [type, type],
 		ss: op,
 		sv: opSV(op),
 		vv: opVV(op),
@@ -112,8 +129,11 @@ function binGen(op) {
 	}
 }
 
-function unGen(op) {
+function unGen(type, op) {
 	let r = {
+		type: Type.function,
+		return: type,
+		args: [type],
 		s: op,
 		v: (a) => a.map(op)
 	}
@@ -154,37 +174,52 @@ const Duet = {
 		waiting: [],
 		results: []
 	},
+	overloads: {
+		clamp: {
+			overload: 'clamp',
+			baseType: Type.real,
+			argCount: 3,
+			vector: 'opv',
+			scalar: 'ops'
+		}
+	},
 	// Our "standard library"
 	platform: {
 		image: {type: Type.type},
 		ops: {
-			add:binGen(opCore.add),
-			sub:binGen(opCore.sub),
-			mul:binGen(opCore.mul),
-			div:binGen(opCore.div),
+			add:binGen(Type.real, opCore.add),
+			sub:binGen(Type.real, opCore.sub),
+			mul:binGen(Type.real, opCore.mul),
+			div:binGen(Type.real, opCore.div),
 			clamp: {
+				type: Type.function,
+				return: Type.real,
+				args: [Type.real, Type.real, Type.real],
 				sss: opCore.clamp,
 				vss: opVSS(opCore.clamp),
 				vvv: opVVV(opCore.clamp)
 			}
 		},
 		opv: {
-			addv:binGen(opVV(opCore.add)),
-			subv:binGen(opVV(opCore.sub)),
-			mulv:binGen(opVV(opCore.mul)),
-			divv:binGen(opVV(opCore.div)),
+			addv:binGen([Type.real], opVV(opCore.add)),
+			subv:binGen([Type.real], opVV(opCore.sub)),
+			mulv:binGen([Type.real], opVV(opCore.mul)),
+			divv:binGen([Type.real], opVV(opCore.div)),
 
-			adds:binGen(opVS(opCore.add)),
-			subs:binGen(opVS(opCore.sub)),
-			muls:binGen(opVS(opCore.mul)),
-			divs:binGen(opVS(opCore.div)),
+			adds:binGen([Type.real], opVS(opCore.add)),
+			subs:binGen([Type.real], opVS(opCore.sub)),
+			muls:binGen([Type.real], opVS(opCore.mul)),
+			divs:binGen([Type.real], opVS(opCore.div)),
 
-			addsv:binGen(opSV(opCore.add)),
-			subsv:binGen(opSV(opCore.sub)),
-			mulsv:binGen(opSV(opCore.mul)),
-			divsv:binGen(opSV(opCore.div)),
+			addsv:binGen([Type.real], opSV(opCore.add)),
+			subsv:binGen([Type.real], opSV(opCore.sub)),
+			mulsv:binGen([Type.real], opSV(opCore.mul)),
+			divsv:binGen([Type.real], opSV(opCore.div)),
 
 			clamp: {
+				type: Type.function,
+				return: [Type.real],
+				args: [[Type.real],[Type.real],[Type.real]],
 				sss: opVVV(opCore.clamp),
 				vss: opVSS(opVVV(opCore.clamp)),
 				vvv: opVVV(opVVV(opCore.clamp))
@@ -192,13 +227,14 @@ const Duet = {
 		},
 		canvas: {
 			type: Type.struct,
-			update: Update.variable,
 			clearcolor: {
 				type: [Type.real, 3],
+				update: Update.once,
 				value: [1,1,1]
 			},
 			size: {
 				type: [Type.real, 2],
+				update: Update.once,
 				get:() => {
 					let c = Duet.canvas;
 					return [c.width, c.height];
@@ -229,15 +265,15 @@ const Duet = {
 		},
 		deltams: {
 			type: Type.integer,
-			update: Update.constant,
+			update: Update.once,
 			value: 16
 		},
 		file: {
 			Type: Type.struct,
 			loadsprite: {
 				type: Type.function,
-				update: Update.constant,
-				arguments: [Type.string],
+				update: Update.once,
+				args: [Type.string],
 				return: 'image',
 				s: (path) => {
 					return new Promise((resolve, reject) => {
@@ -258,21 +294,24 @@ const Duet = {
 		},
 		input: {
 			type: Type.struct,
-			update: Update.frame,
 			right: {
 				type: Type.integer,
+				update: Update.frame,
 				value: 0
 			},
 			left: {
 				type: Type.integer,
+				update: Update.frame,
 				value: 0
 			},
 			up: {
 				type: Type.integer,
+				update: Update.frame,
 				value: 0
 			},
 			down: {
 				type: Type.integer,
+				update: Update.frame,
 				value: 0
 			}
 		},
@@ -761,8 +800,10 @@ const Duet = {
 		};
 
 		for(f in Duet.files) {
-			let d = testAnalysis[f];
-			// let d = Duet.analyze(Duet.files[f]);
+			//let result = [testAnalysis[f], 0];
+			let result = Duet.analyze(f);
+			let d = result.entity;
+			Duet.logParseErrors(result.errors, Duet.files[f].tokens);
 			let typeName = d.type[1];
 			if(d.type[0] == Type.program) {
 				if(Duet.program) console.error('Cannot have multiple programs.');
@@ -818,6 +859,16 @@ const Duet = {
 		}
 		sync_scroll();
 	},
+	logParseErrors:(errors, tokens) => {
+		for(let err of errors) {
+			console.error('Error: ', err.message, 'at token: ', err.start);
+			for(let i = err.start; i < err.start+err.length; i++) {
+				if(!(i in tokens)) continue;
+				if(!tokens[i].span) continue;
+				tokens[i].span.classList.add('code-error');
+			}
+		}
+	},
 	showParseResults:() => {
 		var f = Duet.files[Duet.activeFile];
 		var result = f.parseTree;
@@ -832,13 +883,7 @@ const Duet = {
 			}
 		}
 		processTree(result.node);
-		for(let err of result.errors) {
-			console.error('Parsing error: ', err.message, 'at token: ', err.start);
-			for(let i = err.start; i < err.start+err.length; i++) {
-				if(!(i in tokens)) continue;
-				tokens[i].span.classList.add('code-error');
-			}
-		}
+		Duet.logParseErrors(result.errors, tokens);
 	},
 	createFile:() => {
 		var name = document.getElementById('new-file-name').value;
@@ -1439,7 +1484,6 @@ const Duet = {
 		function event() {
 			var eventNode = newNode(Duet.ParseNode.event);
 			let condition = expression();
-			condition.type = Duet.ParseNode.condition;
 			if(!condition) {
 				return false;
 			}
@@ -1492,30 +1536,30 @@ const Duet = {
 			errors: errors
 		};
 	},
+	printableTree:(f, tree) => {
+		var t = {
+			type: Duet.ParseNodeNames[tree.type]
+		};
+		if(tree.children && tree.children.length) {
+			t.children = tree.children.map((c) => Duet.printableTree(f, c));
+		}
+		else {
+			t.text = [];
+			for(let i = tree.start; i < tree.start+tree.length; i++) {
+				if(!(i in f.tokens)) continue;
+				let token = f.tokens[i];
+				t.text.push(f.text.substr(token.start, token.length));
+			}
+		}
+		return t;
+	},
 	readTree:(file)=> {
 		if(!(file in Duet.files)) {
 			console.error('No such file: ', file);
 			return;
 		}
 		let f = Duet.files[file];
-		function treeRecurse(tree) {
-			var t = {
-				type: Duet.ParseNodeNames[tree.type]
-			};
-			if(tree.children && tree.children.length) {
-				t.children = tree.children.map(treeRecurse);
-			}
-			else {
-				t.text = [];
-				for(let i = tree.start; i < tree.start+tree.length; i++) {
-					if(!(i in f.tokens)) continue;
-					let token = f.tokens[i];
-					t.text.push(f.text.substr(token.start, token.length));
-				}
-			}
-			return t;
-		}
-		return treeRecurse(f.parseTree.node);
+		return Duet.printableTree(f, f.parseTree.node);
 	},
 	/* Create the dependency tree and events.
 	All variables are in an acyclic tree, though they can depend on the value of the previous frame.
@@ -1538,15 +1582,424 @@ const Duet = {
 		value:
 			an expression for the value of the variable, also lists dependent variables
 	*/
-	analyze: (file) => {
+	analyze: (filename) => {
+		let file = Duet.files[filename];
+		let entity = {
+			type: [],
+			source: filename,
+			count: 0,
+			toCreate: 0,
+			toFree: 0,
+			compute: {
+				allocation: [],
+				creation: [],
+				frame: [],
+			},
+			values: {},
+			events: {},
+			references: [],
+			freelist: []
+		};
 		let tree = file.parseTree.node;
-		// An array of the top-level variables and their dependencies
-		let variables = [];
-		let events = [];
-		return {
-			dependencies: variables,
-			events: events
+		let errors = [];
+		let tokens = file.tokens;
+		let lowText = Duet.files[filename].text.toLowerCase();
+		/* Tracking variable types
+			type: Type (real, int, array, etc),
+			update: Update (once, frame, message, listener),
+			storage: Storage (global, instance)
+			dependencies: string[]
+			compute: Dictionary [string, pre-formated code]
+		*/
+		let variables = {};
+		let events = {};
+
+		function err(message, node) {
+			errors.push({message: message, start: node.start, length: node.length});
 		}
+		function tkText(index) {
+			let token = tokens[index];
+			return lowText.substr(token.start, token.length);
+		}
+		function defaultCode(type, code = [], dependencies = []) {
+			return {
+				type: type,
+				update: Update.once,
+				storage: Storage.global,
+				code: code,
+				dependencies: dependencies
+			}
+		}
+
+		const AcType = {
+			varName: 0,
+			funcName: 1,
+			ctor: 2,
+			// Platform function that must be determined at the next phase of analysis
+			overload: 3
+		};
+
+		/* Return a dictionary
+			type: AcType,
+			local: bool,
+			ref: pointer (if platform),
+			text: string[]
+		*/
+		function resolveAccessor(accessor) {
+			if(accessor.type != Duet.ParseNode.accessor) {
+				err('BUG: this was supposed to be an accessor', accessor);
+				return null;
+			}
+			if(accessor.length % 2 == 0) {
+				err('Ill-formated accessor (either extra or missing periods)', accessor);
+				return null;
+			}
+			let ac = [];
+			for(let i = 0; i < accessor.length; i += 2) {
+				let text = tkText(accessor.start + i);
+				ac.push(text);
+			}
+			if(ac[ac.length - 1] == 'create') {
+				if(ac.length != 2) {
+					err('[create] is reserved for making objects using [name].create', accessor);
+				}
+				return {
+					type: AcType.ctor,
+					text: ac
+				}
+			}
+			else if(ac.length == 1 && ac[0] in Duet.overloads) {
+				return {
+					type: AcType.overload,
+					text: ac,
+					ref: Duet.overloads[ac[0]],
+					local: false
+				}
+			}
+			else if(ac[0] in Duet.platform) {
+				let v = Duet.platform[ac[0]];
+				for(let i = 1; i < ac.length; i++) {
+					if(!(ac[i] in v)) {
+						err(`No such property on ${ac[i-1]}: ${ac[i]}`, {start: accessor.start+i*2, length:1});
+						return defaultCode();
+					}
+					v = v[ac[i]];
+				}
+				let acType = AcType.varName;
+				if(v.type == Type.function) {
+					acType = AcType.funcName;
+				}
+				return {
+					type: acType,
+					text: ac,
+					local: false,
+					ref: v
+				}
+			}
+			else if(ac.length > 1) {
+				err(`Advanced accessors not implemented yet`, accessor);
+				return defaultCode();
+			}
+			else {
+				return {
+					type: AcType.varName,
+					local: true,
+					text: ac
+				};
+			}
+			return ac;
+		}
+		function accessorCode(acNode, ac) {
+			switch(ac.type) {
+			// Either a platform or local variable
+			case AcType.varName: {
+				// TODO: figure out nested identifiers
+				if(ac.local) {
+					return defaultCode(
+						undefined,
+						[ VM.local, ac.text[0] ],
+						[ac[0]]
+					);
+				}
+
+				if(!('type' in ac.ref)) {
+					err(`Not a valid platform variable: ${ac.text.join('.')}`, acNode);
+					return defaultCode();
+				}
+				let code = defaultCode(ac.ref.type);
+				code.update = ac.ref.update || Update.once;
+				if('get' in ac.ref) {
+					code.code = [
+						VM.call, ac.ref.get, 0
+					];
+				}
+				else if('value' in ac.ref) {
+					code.code = [
+						VM.read, ac.ref
+					];
+				}
+				else {
+					err(`COMPILER BUG: misconfigured value ${ac.text.join('.')}`, acNode);
+				}
+				return code;
+			}
+			// A function with no arguments
+			case AcType.funcName: {
+				if(ac.local) {
+					err('Local functions not yet implemented', acNode);
+				}
+				else {
+					if(ac.ref.args.length) {
+						err(`Function called without arguments, but it expects ${ac.ref.args.length}`, acNode);
+					}
+					let code = defaultCode(ac.ref.return, [VM.call.s, ac.ref, 0]);
+					code.update = v.update || Update.once;
+					return code;
+				}
+			}
+			case AcType.ctor: {
+				let etype = ac.text[0];
+				return defaultCode(
+					[Type.entity, etype],
+					[
+						[VM.constant, etype,],
+						[VM.constant, 1,],
+						[VM.constant, true,],
+						[VM.call, Duet.platform.create.c, 3]
+					]
+				);
+				break;
+			}
+			default:
+				return defaultCode();
+			}
+		}
+		function analyzeExp(expNode) {
+			if(typeof(expNode) !== 'object' || !('type' in expNode)) {
+				console.error('Not a valid expression:', expNode);
+				return defaultCode();
+			}
+			switch(expNode.type) {
+			case Duet.ParseNode.accessor: {
+				// Special case of creating nodes
+				let c = resolveAccessor(expNode);
+				return accessorCode(expNode, c);
+			}
+			case Duet.ParseNode.number: {
+				let workingText = '';
+				for(let i = 0; i < expNode.length; i++) {
+					workingText += tkText(expNode.start+i);
+				}
+				let n = Number(workingText);
+				return defaultCode(Type.real, [VM.constant, n]);
+			}
+			case Duet.ParseNode.string: {
+				let workingText = '';
+				for(let i = 1; i < expNode.length - 1; i++) {
+					let tok = tokens[expNode.start+i];
+					if(tok.type == Duet.Token.stringText) {
+						workingText += tok.type;
+					}
+					else if(tok.type == Duet.Token.escapedStringText) {
+						switch(tkText(expNode.start+i)) {
+						case '\\n':
+							workingText += '\n';
+							break;
+						case '\\t':
+							workingText += '\t';
+							break;
+						}
+					}
+				}
+				return defaultCode(Type.string, [VM.constant, workingText]);
+			}
+			case Duet.ParseNode.funCall:{
+				let name = resolveAccessor(expNode.children[0]);
+				if(name.type != AcType.funcName && name.type != AcType.overload) {
+					err('Tried to call a variable like a function', expNode.children[0]);
+					return defaultCode();
+				}
+				if(name.local || !name.ref) {
+					err(`Local functions not implemented yet: ${name.text.join('.')}`, expNode);
+					return defaultCode();
+				}
+				let ref = name.ref;
+				let args = expNode.children[1];
+				if(args.type != Duet.ParseNode.valueList) {
+					err(`Expected a list of arguments for the function ${name.text.join('.')}`, expNode);
+					return defaultCode();
+				}
+				let code = [];
+				let update = Update.once;
+				let storage = Storage.global;
+				let expLength = name.type == AcType.funcName? ref.args.length : ref.argCount;
+				if(args.children.length != expLength) {
+					err(`Function ${name.text.join('.')} expects ${expLength} arguments, but was given ${args.children.length} instead.`, args);
+				}
+				for(let i = 0; i < args.children.length; i++) {
+					let a = args.children[i];
+					let argCode = analyzeExp(a);
+					if(name.type == AcType.funcName) {
+						let expType = name.ref.args[i];
+						if(argCode.type && expType != argCode.type) {
+							err(`Function ${name.text.join('.')} expected an argument of type ${TypeNames[expType]}, but received ${TypeNames[argCode.type]}`, a); 
+						}
+					}
+					code.push(argCode.code);
+					update = Math.max(argCode.update, update);
+					storage = Math.max(argCode.storage, storage);
+				}
+				code.push([VM.call, ref, args.children.length]);
+				return {
+					type: ref.return,
+					update: ref.update || Update.once,
+					code: code
+				}
+			}
+			case Duet.ParseNode.valueList: {
+				let elemType = -1;
+				let code = [];
+				let update = Update.once;
+				let storage = Storage.global;
+				for(let a of expNode.children) {
+					let argCode = analyzeExp(a);
+					if(elemType >= 0 && argCode.type != elemType) {
+						err(`Assumed list was of type ${TypeNames[elemType]}, but this value is of type ${TypeNames[a.type]}`, a);
+					}
+					elemType = argCode.type;
+					code.push(argCode.code);
+					update = Math.max(argCode.update, update);
+					storage = Math.max(argCode.storage, storage);
+				}
+				code.push([VM.array, expNode.children.length]);
+				return {
+					type: [elemType],
+					update: update,
+					storage: storage,
+					code:code
+				};
+			}
+			case Duet.ParseNode.expression: {
+				let op = expNode.children[0];
+				if(op.type != Duet.ParseNode.operator) {
+					err('COMPILER BUG: expected an operator', op);
+				}
+				if(expNode.children.length < 2 || expNode.children.length > 3) {
+					err('COMPILER BUG: operators only work with 1 or 2 values.', expNode);
+				}
+				let code = [];
+				let type = undefined;
+				let update = Update.once;
+				let storage = Storage.global;
+				// TODO: properly figure out what we can
+				for(let i = 1; i < expNode.children.length; i++) {
+					let a = expNode.children[i];
+					let argCode = analyzeExp(a);
+					type = type || argCode.type;
+					code.push(argCode.code);
+					update = Math.max(argCode.update, update);
+					storage = Math.max(argCode.storage, storage);
+				}
+				code.push([VM.call, tkText(op.start), expNode.children.length - 1]);
+				return  {
+					type: type,
+					update: update,
+					storage: storage,
+					code:code
+				};
+			}
+			default:
+				console.error('Not supported:', Duet.printableTree(file, expNode));
+				return defaultCode();
+			}
+		}
+
+		let header = tree.children[0];
+		if(header.type != Duet.ParseNode.header) {
+			err('Expected the program to start with a header, got ${Duet.ParseNodeNames}', header);
+		}
+		let type = tkText(header.start);
+		let name = tkText(header.start + 1);
+		if(!(type in Type) || (type != 'program' && type != 'entity')) {
+			err(`Expected the script type to be [program] or [entity], found ${type}`, {start: header.start, length: 1});
+		}
+		if(name in Duet.entities) {
+			err(`Entity class ${name} already exists`, header.start+1, 1);
+		}
+		entity.type = [Type[type], name];
+		for(let i = 1; i < tree.children.length; i++) {
+			let node = tree.children[i];
+			if(node.type == Duet.ParseNode.binding) {
+				let declaration = node.children[0];
+				let ident = declaration.children[0];
+				if(ident.type != Duet.ParseNode.accessor || ident.children.length || ident.length > 1) {
+					err('Advanced bindings not implemented yet', node);
+					continue;
+				}
+				let name = tkText(ident.start);
+				if(name in variables) {
+					err(`Duplicate variable declaration: ${name}`, ident); 
+				}
+				let value1 = analyzeExp(node.children[1]);
+				// An initialization and an integration
+				if(node.children.length == 2) {
+					variables[name] = value1;
+				}
+				else if(node.children.length == 3) {
+					variables[name] = value1;
+					variables[name].storage = Storage.instance;
+					variables[name].integrate = analyzeExp(node.children[2]);
+				}
+				else{
+					err('COMPILER BUG: expected one or two values in binding', node);
+				}
+				entity.values[name] = null;
+			}
+			else if(node.type == Duet.ParseNode.event) {
+				let cond = node.children[0];
+				if(cond.type != Duet.ParseNode.accessor || cond.children.length > 1) {
+					err(`Advanced conditions not implemented yet`, cond);
+				}
+				let name = tkText(cond.start);
+				if(!name in events) {
+					events[name] = [];
+				}
+			}
+			else {
+				err(`Unexpected statement type: ${Duet.ParseNodeNames[node.type]}`, node);
+			} 
+		}
+		function printableVar(val) {
+			let rcode;
+			function readableCode(line) {
+				if(Array.isArray(line[0])) {
+					return line.map(readableCode);
+				}
+				return [VMNames[line[0]]].concat(line.slice(1));
+			}
+			let readableType = undefined;
+			if(Array.isArray(val.type)) {
+				readableType = [TypeNames[val.type[0]]].concat(val.type.slice(1));
+			}
+			else if(val.type in TypeNames) {
+				readableType = TypeNames[val.type];
+			}
+
+			let r = {
+				type: readableType,
+				update: UpdateNames[val.update],
+				storage: StorageNames[val.storage],
+				code: readableCode(val.code),
+			};
+			if('integrate' in val) {
+				r.integrate = printableVar(val.integrate);
+			}
+			return r;
+		}
+		for(let val in variables) {
+			console.log(val, '=', printableVar(variables[val]));
+		}
+		return {entity:entity, errors:errors};
 	}
 };
 
@@ -1555,4 +2008,16 @@ for(let k in Duet.Token) {
 }
 for(let k in Duet.ParseNode) {
 	Duet.ParseNodeNames[Duet.ParseNode[k]] = k;
+}
+for(let k in Type) {
+	TypeNames[Type[k]] = k;
+}
+for(let k in Update) {
+	UpdateNames[Update[k]] = k;
+}
+for(let k in Storage) {
+	StorageNames[Storage[k]] = k;
+}
+for(let k in VM) {
+	VMNames[VM[k]] = k;
 }
