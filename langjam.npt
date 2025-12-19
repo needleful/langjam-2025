@@ -46,3 +46,6 @@ m3
 	- Cannot draw images on Firefox
 		p1
 		i16
+	- Event with multiple effects causes a hang
+		p1
+		i17

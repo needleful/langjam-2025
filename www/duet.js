@@ -800,7 +800,7 @@ const Duet = {
 		};
 
 		for(f in Duet.files) {
-			//let result = [testAnalysis[f], 0];
+			//let result = {entity: testAnalysis[f], errors:[]};
 			let result = Duet.analyze(f);
 			let d = result.entity;
 			Duet.logParseErrors(result.errors, Duet.files[f].tokens);
