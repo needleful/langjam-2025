@@ -20,7 +20,8 @@ const Type = {
 	string: 5,
 	entity: 6,
 	program: 7,
-	unknown: 8
+	unknown: 8,
+	void: 9
 };
 
 let TypeNames = {};
@@ -107,6 +108,9 @@ function opSV(op) {
 }
 function opVS(op) {
 	return function(as, b) {
+		if(!Array.isArray(as)) {
+			console.error('Help me');
+		}
 		let r = [];
 		r.length = as.length;
 		for(let i = 0; i < as.length; i++) {
@@ -257,6 +261,9 @@ const Duet = {
 				}
 			},
 			drawsprite: {
+				type: Type.function,
+				args: ['image', [Type.real, 2]],
+				return: Type.void,
 				sv: (image, positions) => {
 					for(let pos of positions) {
 						//console.log('Drawing:', image, pos, [image.width, image.height]);
@@ -431,50 +438,34 @@ const Duet = {
 			stack.push(arg(1).value);
 			break;
 		}
+		case VM.callAsync:
 		case VM.call: {
 			let fn = arg(1);
 			if(typeof(fn) !== 'function') {
 				console.error('Expected a function: ', fn, code, pointer);
 				return false;
 			}
-			let args = [];
-			args.length = arg(2);
-			for(let i = 0; i < args.length; i++) {
-				args[args.length - 1 - i] = stack.pop();
-			}
-			stack.push(fn(...args));
-			break;
-		}
-		case VM.callAsync: {
-			let fn = arg(1);
-			if(typeof(fn) !== 'function') {
-				console.error('Expected a function: ', fn, code, pointer);
-				return false;
-			}
-			let args = [];
-			args.length = arg(2);
-			for(let i = 0; i < args.length; i++) {
-				args[args.length - 1 - i] = stack.pop();
-			}
-			let promise = fn(...args);
-			let id = Duet.promises.length;
-			if('then' in promise) {
-				Duet.promises.waiting.push(promise.then((value) => {
+			let len = arg(2);
+			let args = stack.slice(stack.length - len);
+			stack.length -= len;
+
+			let result = fn(...args);
+			if(instr == VM.callAsync && 'then' in result) {
+				let id = Duet.promises.waiting.length;
+				Duet.promises.waiting.push(result.then((value) => {
 					Duet.promises.results[id] = value;
 				}));
 				stack.push({_promise: id});
 			}
 			else {
-				stack.push(value);
+				stack.push(result);
 			}
 			break;
 		}
 		case VM.array: {
-			let result = [];
-			result.length = arg(1);
-			for(let i = 0; i < result.length; i++) {
-				result[result.length - 1 - i] = stack.pop();
-			}
+			let len = arg(1);
+			let result = stack.slice(stack.length - len);
+			stack.length -= len;
 			stack.push(result);
 			break;
 		}
@@ -1773,7 +1764,7 @@ const Duet = {
 			case Duet.ParseNode.funCall:{
 				let name = resolveAccessor(expNode.children[0]);
 				if(name.type != AcType.funcName && name.type != AcType.overload) {
-					err('Tried to call a variable like a function', expNode.children[0]);
+					err(`Tried to call a variable [${name.text.join('.')}] like a function`, expNode.children[0]);
 					return defaultCode(expNode);
 				}
 				if(name.local || !name.ref) {
@@ -1884,8 +1875,11 @@ const Duet = {
 					err(`Advanced conditions not implemented yet`, cond);
 				}
 				let name = tkText(cond.start);
-				if(!name in events) {
+				if(!(name in events)) {
 					events[name] = [];
+				}
+				for(let i = 1; i < node.children.length; i++) {
+					events[name].push(analyzeExp(node.children[i]));
 				}
 			}
 			else {
@@ -1938,10 +1932,15 @@ const Duet = {
 				}
 				else if(node.code[0] = VM.local) {
 					let locName = node.code[1];
-					if(!locName in checked) {
+					if(locName in checked) {
+						let l = checked[locName]
+						node.type = l.type;
+						node.storage = Math.max(node.storage, l.storage);
+						node.update = Math.max(node.update, l.update);
+					}
+					else {
 						err(`COMPILER BUG: could not determine type of ${locName}`, node.parseNode);
 					}
-					node.type = checked[locName].type;
 				}
 				return node;
 			}
@@ -1951,7 +1950,7 @@ const Duet = {
 
 			function unifyFunc() {
 				let funcRef = instr[1];
-				let funcName;
+				let funcName = funcRef;
 				if(typeof(funcRef) == 'string') {
 					function findBinOpGroup(vectorLeft, vectorRight) {
 						let outerGroup = vectorLeft? Duet.platform.opv : Duet.platform.ops;
@@ -1999,7 +1998,7 @@ const Duet = {
 					code = code.concat(c.code);
 				}
 				if(!(subType in funcRef)) {
-					err(`COMPILER BUG: Could not overload function for type: [${subType}]`, node.parseNode);
+					err(`COMPILER BUG: Could not overload function [${funcName}] for type: [${subType}]`, node.parseNode);
 				} 
 				let realFunc = funcRef[subType];
 				node.code[1] = realFunc;
@@ -2019,6 +2018,7 @@ const Duet = {
 					else {
 						elemType = c.type;
 					}
+					code = code.concat(c.code);
 				}
 				node.type = [elemType, node.children.length];
 				node.code = code.concat(node.code);
@@ -2046,7 +2046,6 @@ const Duet = {
 				break;
 			}
 			unifyChildren();
-			node.code = code.concat(node.code);
 			// TODO: figure out unifying the types
 			return node;
 		}
@@ -2140,6 +2139,15 @@ const Duet = {
 					entity.compute.frame.push([varname, varNode.code]);
 				}
 			}
+		}
+		for(let eventName in events) {
+			let eventCode = [];
+			// For now, there's no conditional events
+			for(let line of events[eventName]) {
+				checkExp(eventName, line);
+				eventCode = eventCode.concat(line.code);
+			}
+			entity.events[eventName] = [{do: eventCode}];
 		}
 		return {entity:entity, errors:errors};
 	}
