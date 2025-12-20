@@ -18,18 +18,28 @@ m3
 	- Lexer
 		p1
 		i5
+		x
 	- Editor
 		p1
 		i6
+		x
 	- Parser
 		p1
 		i7
+		x
 	- Compiler
 		p1
 		i8
 	- The VM
 		p1
 		i9
+	- Figure out events for when values change
+		p1
+		i21
+		/For example:
+		/spawned_enemies = floor(time.seconds/seconds_per_enemy)
+		/
+		/this should only trigger when seconds_per_enemy actually changes
 - Editor Bugs
 	p1
 	i10
