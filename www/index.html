@@ -73,8 +73,9 @@
 				text-decoration: wavy underline;
 				color: #AA10DD;
 			}
-			.game-canvas {
+			#game-canvas {
 				max-width: 99%;
+				background-color: #333;
 			}
 		</style>
 		<script type='text/javascript' src='/duet.js'></script>
@@ -126,6 +127,7 @@
 					e.preventDefault();
 				}
 			});
+			document.addEventListener('mousemove', Duet.mousemove);
 
 			function sync_scroll() {
 				/* Scroll result to scroll coords of event - sync with textarea */
@@ -136,8 +138,6 @@
 			}
 			function togglePause() {
 				Duet.setPaused(!Duet.getPaused());
-				let b = document.getElementById('button-pause');
-				b.innerText = Duet.getPaused() ? 'Resume' : 'Pause';
 			}
 		</script>
 	</body>

@@ -83,6 +83,18 @@ const opCore = {
 			return max;
 		}
 		return x;
+	},
+	less: (a, b) => {
+		return 1.0*(a < b)
+	},
+	greater: (a, b) => {
+		return 1.0*(a > b)
+	},
+	lessOrEqual: (a, b) => {
+		return 1.0*(a <= b)
+	},
+	greaterOrEqual: (a, b) => {
+		return 1.0*(a >= b)
 	}
 }
 
@@ -138,10 +150,13 @@ function binGen(type1, op, type2 = Type.unknown, retType = Type.unknown) {
 	}
 }
 
-function unGen(type, op) {
-	let r = {
+function unGen(type, op, retType = Type.unknown) {
+	if(retType == Type.unknown) {
+		retType = type;
+	}
+	return {
 		type: Type.function,
-		return: type,
+		return: retType,
 		args: [type],
 		s: op,
 		v: (a) => a.map(op)
@@ -197,23 +212,44 @@ const Duet = {
 		'-': 'subtract',
 		'*': 'multiply',
 		'/': 'divide',
-		'%': 'modulo'
+		'%': 'modulo',
+		'<': 'less',
+		'>': 'greater',
+		'<=': 'lessOrEqual',
+		'>=': 'greaterOrEqual',
 	},
 	// Our "standard library"
 	platform: {
 		image: {type: Type.type},
+		pi: {
+			type: Type.real,
+			update: Update.once,
+			get:() => Math.PI
+		},
 		ops: {
+			sign: unGen(Type.real, Math.sign),
+			arctan:unGen(Type.real, Math.atan),
 			toS: {
 				add:binGen(Type.real, opCore.add),
 				subtract:binGen(Type.real, opCore.sub),
 				multiply:binGen(Type.real, opCore.mul),
 				divide:binGen(Type.real, opCore.div),
+
+				less:binGen(Type.real, opCore.less),
+				greater:binGen(Type.real, opCore.greater),
+				lessOrEqual:binGen(Type.real, opCore.lessOrEqual),
+				greaterOrEqual:binGen(Type.real, opCore.greaterOrEqual),
 			},
 			toV: {
 				add:binGen(Type.real, opSV(opCore.add), [Type.real], [Type.real]),
 				subtract:binGen(Type.real, opSV(opCore.sub), [Type.real], [Type.real]),
 				multiply:binGen(Type.real, opSV(opCore.mul), [Type.real], [Type.real]),
 				divide:binGen(Type.real, opSV(opCore.div), [Type.real], [Type.real]),
+
+				less:binGen(Type.real, opSV(opCore.less), [Type.real], [Type.real]),
+				greater:binGen(Type.real, opSV(opCore.greater), [Type.real], [Type.real]),
+				lessOrEqual:binGen(Type.real, opSV(opCore.lessOrEqual), [Type.real], [Type.real]),
+				greaterOrEqual:binGen(Type.real, opSV(opCore.greaterOrEqual), [Type.real], [Type.real]),
 			},
 			clamp: {
 				type: Type.function,
@@ -230,12 +266,22 @@ const Duet = {
 				subtract:binGen([Type.real], opVV(opCore.sub)),
 				multiply:binGen([Type.real], opVV(opCore.mul)),
 				divide:binGen([Type.real], opVV(opCore.div)),
+
+				less:binGen([Type.real], opVV(opCore.less)),
+				greater:binGen([Type.real], opVV(opCore.greater)),
+				lessOrEqual:binGen([Type.real], opVV(opCore.lessOrEqual)),
+				greaterOrEqual:binGen([Type.real], opVV(opCore.greaterOrEqual)),
 			},
 			toS: {
 				add:binGen([Type.real], opVS(opCore.add), Type.real),
 				subtract:binGen([Type.real], opVS(opCore.sub), Type.real),
 				multiply:binGen([Type.real], opVS(opCore.mul), Type.real),
 				divide:binGen([Type.real], opVS(opCore.div), Type.real),
+
+				less:binGen([Type.real], opVS(opCore.less), Type.real),
+				greater:binGen([Type.real], opVS(opCore.greater), Type.real),
+				lessOrEqual:binGen([Type.real], opVS(opCore.lessOrEqual), Type.real),
+				greaterOrEqual:binGen([Type.real], opVS(opCore.greaterOrEqual), Type.real),
 			},
 			clamp: {
 				type: Type.function,
@@ -244,7 +290,8 @@ const Duet = {
 				sss: opVVV(opCore.clamp),
 				vss: opVSS(opVVV(opCore.clamp)),
 				vvv: opVVV(opVVV(opCore.clamp))
-			}
+			},
+			index: binGen([Type.real], (a, b) => a[b], Type.real, Type.real)
 		},
 		canvas: {
 			clearcolor: {
@@ -262,19 +309,40 @@ const Duet = {
 			},
 			drawsprite: {
 				type: Type.function,
-				args: ['image', [Type.real, 2]],
+				args: ['image', [Type.real, 2], Type.real],
+				requiredArgs: 2,
 				return: Type.void,
-				sv: (image, positions) => {
+				sv: (image, positions, angle = 0) => {
+					//console.log('Drawing:', image, pos, [image.width, image.height]);
+					let cw = image.width/2;
+					let ch = image.height/2;
+
 					for(let pos of positions) {
-						//console.log('Drawing:', image, pos, [image.width, image.height]);
-						let center = [image.width/2, image.height/2];
-						Duet.draw2d.drawImage(
-							image, pos[0] - center[0], pos[1] - center[1],
-							image.width, image.height
-						);
+						Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
+						Duet.draw2d.rotate(angle);
+						Duet.draw2d.drawImage(image, -cw, -ch);
 					}
+				},
+				ss: (image, pos, angle = 0) => {
+					let cw = image.width/2;
+					let ch = image.height/2;
+					Duet.draw2d.setTransform(1, 0, 0, 1, pos[0] - cw, pos[1] - ch);
+					Duet.draw2d.rotate(angle);
+					Duet.draw2d.drawImage(image, -cw, -ch);
+				},
+				sss: (image, position, angle) => {
+					Duet.platform.canvas.drawsprite.ss(image, positions, angle);
+				},
+				ssv: (image, positions, angles) => {
+					angles.map(a => Duet.platform.canvas.drawsprite.sss(image, positions, a));
+				},
+				svs: (image, positions, angle) => {
+					Duet.platform.canvas.drawsprite.sv(image, positions, angle);
+				},
+				svv: (image, positions, angles) => {
+					angles.map(a => Duet.platform.canvas.drawsprite.svs(image, positions, a));
 				}
-			}
+			},
 		},
 		paused: {
 			type: Type.boolean,
@@ -346,6 +414,15 @@ const Duet = {
 				type: Type.real,
 				update: Update.frame,
 				value: 0
+			},
+			mouse: {
+				type: [Type.real, 2],
+				update: Update.frame,
+				value: [0,0]
+			},
+			click: {
+				left: {type: Type.real, update: Update.frame, value: 0},
+				right: {type: Type.real, update: Update.frame, value: 0}
 			}
 		},
 		create: {
@@ -394,6 +471,21 @@ const Duet = {
 	press: (e) => {
 		Duet._keySet(e.key, 1);
 	},
+	checkMouse: (event) => {
+		let m = Duet.platform.input.click;
+		if(event.buttons === undefined) {
+			console.warn('I can\'t be bothered');
+		}
+		else {
+			m.left = event.buttons & 1;
+			m.right = event.buttons & 2 >> 1;
+		}
+	},
+	mousemove: (event) => {
+		let r = Duet.canvas.getBoundingClientRect();
+		Duet.platform.input.mouse.value = [event.clientX - r.x, event.clientY - r.y];
+		Duet.checkMouse(event);
+	}, 
 	_keySet: (key, val) => {
 		switch(key) {
 		case "ArrowUp":
@@ -511,10 +603,12 @@ const Duet = {
 	},
 
 	run: () => {
+		Duet.setPaused(true);
 		Duet.draw2d = Duet.canvas.getContext('2d');
 		// Default events
 		Duet.canvas.onkeydown = Duet.press;
 		Duet.canvas.onkeyup = Duet.release;
+		Duet.canvas.onclick = Duet.click;
 
 		// Creation of the program and loading entity types
 		for(let type in Duet.entities) {
@@ -531,9 +625,9 @@ const Duet = {
 		}
 		let messages = [];
 		{
-			let cc = Duet.platform.canvas.clearcolor.value;
-			Duet.draw2d.fillstyle = `rgb(${255*cc[0]}, ${255*cc[1]}, ${255*cc[2]})`;
-			Duet.draw2d.fillRect(0, 0, Duet.canvas.width, Duet.canvas.height);
+			Duet.draw2d.setTransform(1,0,0,1,0,0);
+			Duet.draw2d.clearRect(0,0, Duet.canvas.width,Duet.canvas.height)
+			//Duet.draw2D
 		}
 
 		for(let typename in Duet.entities) {
@@ -609,6 +703,8 @@ const Duet = {
 		if(!p) {
 			Duet.frame();
 		}
+		let b = document.getElementById('button-pause');
+		b.innerText = Duet.getPaused() ? 'Resume' : 'Pause';
 	},
 	getPaused: () => {
 		return Duet.platform.paused.value;
@@ -719,6 +815,9 @@ const Duet = {
 			}
 			Duet.files[f].name = d;
 			Duet.entities[typeName] = d;
+			if(result.errors.length > 0) {
+				Duet.setPaused(true);
+			}
 		}
 	},
 	compileAndRun: () => {
@@ -773,6 +872,7 @@ const Duet = {
 			for(let i = err.start; i < err.start+err.length; i++) {
 				if(!(i in tokens)) continue;
 				if(!tokens[i].span) continue;
+				tokens[i].span.title = err.message;
 				tokens[i].span.classList.add('code-error');
 			}
 		}
@@ -851,8 +951,8 @@ const Duet = {
 		const r_indent = /^\t+/;
 		// For now, just single-character escapes
 		const r_escaped = /^\\./;
-		// catch-all for any non-alphanumeric and non-whitespace characters
-		const r_operator = /^[^\s\d\p{Alpha}_]+/u;
+		// catch-all for operator-like characters
+		const r_operator = /^[^\s\d\p{Alpha}_[\]{}()']+/u;
 		const r_text = /^[^\'\\]+/;
 
 		// Current character
@@ -960,6 +1060,7 @@ const Duet = {
 		funCall: 16,
 		string: 17,
 		condition: 18,
+		index: 18,
 	},
 	ParseNodeNames: {},
 	// Parse nodes will be a dictionary of
@@ -1158,10 +1259,20 @@ const Duet = {
 					node.children = [name, args];
 					return grow(node);
 				}
+				else if(grab(Duet.Token.bracketStart)) {
+					let node = newNode(Duet.ParseNode.index);
+					let args = valueList(Duet.Token.bracketEnd);
+					if(!grab(Duet.Token.bracketEnd)) {
+						parseError('Expected a bracket "]" to end the array indexing', args.length, -args.length);
+					}
+					node.children = [name].concat(args.children);
+					return grow(node);
+				}
 				else {
 					return name;
 				}
 			case Duet.Token.parenStart:
+				grab(Duet.Token.parenStart);
 				var e = expression();
 				if(!e) {
 					parseError('Expected an expression inside parentheses');
@@ -1392,7 +1503,7 @@ const Duet = {
 		function event() {
 			var eventNode = newNode(Duet.ParseNode.event);
 			let condition = expression();
-			if(!condition) {
+			if(!condition || condition.length == 0) {
 				return false;
 			}
 			eventNode.children.push(condition);
@@ -1413,8 +1524,11 @@ const Duet = {
 				}
 				else while(fn) {
 					eventNode.children.push(fn);
+					if(!grab(Duet.Token.newline)) {
+						break;
+					}
 					skipIgnored();
-					if(!grab(Duet.Token.newline) || !grab(Duet.Token.indentation)) {
+					if(!grab(Duet.Token.indentation)) {
 						break;
 					}
 					fn = message();
@@ -1576,7 +1690,8 @@ const Duet = {
 			funcName: 1,
 			ctor: 2,
 			// Platform function that must be determined at the next phase of analysis
-			overload: 3
+			overload: 3,
+			index: 4,
 		};
 
 		/* Return a dictionary
@@ -1733,6 +1848,16 @@ const Duet = {
 				let c = resolveAccessor(expNode);
 				return accessorCode(expNode, c);
 			}
+			case Duet.ParseNode.index: {
+				return {
+					parseNode: expNode,
+					type: Type.unknown,
+					update: Update.once,
+					storage: Storage.global,
+					children: expNode.children.map(analyzeExp),
+					code: [VM.call, Duet.platform.opv.index, expNode.children.length]
+				}
+			}
 			case Duet.ParseNode.number: {
 				let workingText = '';
 				for(let i = 0; i < expNode.length; i++) {
@@ -1764,7 +1889,7 @@ const Duet = {
 			case Duet.ParseNode.funCall:{
 				let name = resolveAccessor(expNode.children[0]);
 				if(name.type != AcType.funcName && name.type != AcType.overload) {
-					err(`Tried to call a variable [${name.text.join('.')}] like a function`, expNode.children[0]);
+					err(`Unknown function: [${name.text.join('.')}]`, expNode.children[0]);
 					return defaultCode(expNode);
 				}
 				if(name.local || !name.ref) {
@@ -1777,9 +1902,23 @@ const Duet = {
 					err(`Expected a list of arguments for the function ${name.text.join('.')}`, expNode);
 					return defaultCode(expNode);
 				}
-				let expLength = name.type == AcType.funcName? ref.args.length : ref.argCount;
-				if(args.children.length != expLength) {
-					err(`Function ${name.text.join('.')} expects ${expLength} arguments, but was given ${args.children.length} instead.`, args);
+				let minArgs;
+				let maxArgs;
+				if(name.type == AcType.funcName) {
+					maxArgs = ref.args.length;
+				}
+				else {
+					maxArgs = ref.argCount;
+				}
+				if('requiredArgs' in ref) {
+					minArgs = ref.requiredArgs;
+				}
+				if(args.children.length > maxArgs) {
+					err(`Function ${name.text.join('.')} expects at most ${maxArgs} arguments, but was given ${args.children.length} instead.`, args);
+				}
+				else if(args.children.length < minArgs) 
+				{
+					err(`Function ${name.text.join('.')} expects between ${minArgs}-${maxArgs} arguments, but was given ${args.children.length} instead.`, args);
 				}
 				return {
 					parseNode: expNode,
@@ -1870,6 +2009,7 @@ const Duet = {
 				}
 			}
 			else if(node.type == Duet.ParseNode.event) {
+				console.log("Event:", Duet.printableTree(file, node));
 				let cond = node.children[0];
 				if(cond.type != Duet.ParseNode.accessor || cond.children.length > 1) {
 					err(`Advanced conditions not implemented yet`, cond);
@@ -1906,7 +2046,7 @@ const Duet = {
 		}
 
 		let dependencies = gatherDependencies();
-		console.log('Dependencies', dependencies);
+		//console.log('Dependencies', dependencies);
 		let checked = {};
 
 		function isVectorValue(node) {
@@ -1992,7 +2132,7 @@ const Duet = {
 					let c = node.children[i];
 					let expType = funcRef.args[i];
 					if(!unify(expType, c.type)) {
-						err(`Function ${funcName}: Expected argument of ${i} to be of type ${Duet.readableType(expType)}. Received ${Duet.readableType(c.type)}`, c.parseNode);
+						err(`Function ${funcName}: Expected argument ${i} to be of type ${Duet.readableType(expType)}. Received ${Duet.readableType(c.type)}`, c.parseNode);
 					}
 					subType += (c.storage == Storage.instance) ? 'v' : 's';
 					code = code.concat(c.code);
@@ -2118,7 +2258,7 @@ const Duet = {
 					code: varNode.integrate.code
 				};
 			}
-			console.log(varname, 'typeInfo:', result);
+			//console.log(varname, 'typeInfo:', result);
 
 			// Apply all the computation things after resolving types and overloads
 			entity.values[varname] = varNode.storage == Storage.instance? [] : null;
@@ -2143,7 +2283,8 @@ const Duet = {
 		for(let eventName in events) {
 			let eventCode = [];
 			// For now, there's no conditional events
-			for(let line of events[eventName]) {
+			for(let i = 0; i < events[eventName].length; i++) {
+				let line = events[eventName][i];
 				checkExp(eventName, line);
 				eventCode = eventCode.concat(line.code);
 			}

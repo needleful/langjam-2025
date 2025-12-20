@@ -1,10 +1,13 @@
 entity player
 
-sprite = file.loadsprite('assets/player.png')
+sprite = file.loadsprite('/assets/player.png')
+crosshair = file.loadsprite('/assets/crosshair.png')
 speed = 10.0
 movement = [input.right - input.left, input.down - input.up]
 position = canvas.size/2; clamp(position + movement * speed, [0,0], canvas.size)
 frame = time.frame
+diff = input.mouse - position
 
 frame
-	canvas.drawSprite(sprite, position)
+	canvas.drawSprite(sprite, position, ops.arctan(diff[1]/diff[0]) + pi*(diff[0] < 0) + pi/2)
+	canvas.drawSprite(crosshair, input.mouse)
