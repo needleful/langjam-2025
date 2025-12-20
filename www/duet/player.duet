@@ -1,7 +1,7 @@
 entity player
 
-sprite = file.loadsprite('/assets/player.png')
-crosshair = file.loadsprite('/assets/crosshair.png')
+sprite = file.loadsprite('assets/player.png')
+crosshair = file.loadsprite('assets/crosshair.png')
 speed = 10.0
 movement = [input.right - input.left, input.down - input.up]
 position = canvas.size/2; clamp(position + movement * speed, [0,0], canvas.size)
