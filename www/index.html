@@ -27,13 +27,11 @@
 				margin: 5pt;
 			}
 			#editor-root {
-				background-color:#CCC;
 				position:relative;
 				height: 250pt;
 			}
 			.code-container {
-				margin: 10px;
-				padding: 10px;
+				padding: 10pt;
 				border: 0;
 				width: calc(100% - 32px);
 				height: 250pt;
@@ -42,6 +40,9 @@
 				left: 0;
 				overflow: scroll;
 				white-space: pre;
+				font-family: monospace;
+				font-style: none;
+				text-decoration: none;
 			}
 			#editor-text {
 				z-index: 1;
@@ -49,6 +50,11 @@
 				background: transparent;
 				caret-color: black;
 				resize: none;
+				margin: 0;
+			}
+			#highlighting {
+				margin: 0;
+				background-color:#CCC;
 			}
 
 			.code-operator, .code-digits, .code-period, .code-escapedStringText {
