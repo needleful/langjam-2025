@@ -9,5 +9,6 @@ frame = time.frame
 diff = input.mouse - position
 
 frame
-	canvas.drawSprite(sprite, position, ops.arctan(diff[1]/diff[0]) + pi*(diff[0] < 0) + pi/2)
+	canvas.drawSprite(sprite, position, 
+		opv.angle2(diff) + pi/2)
 	canvas.drawSprite(crosshair, input.mouse)

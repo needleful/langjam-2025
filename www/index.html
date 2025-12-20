@@ -3,25 +3,40 @@
 	<head>
 		<title>Duet</title>
 		<style>
-			#editor-container {
+			body {
+				background-color: #DDD;
+				color: #333;
+			}
+			#main-content {
 				display:flex;
+				flex-wrap: wrap;
 			}
-			#editor {
-				flex:1.6;
+			#editor-status {
+				padding-left: 2em;
+				font-size: 0.8em;
+				font-style: italic;
 			}
-			#file-panel {
-				flex:0.5;
+			#files-list {
+				margin: 0;
+				padding: 0;
+			}
+			#files-list li {
+				display: inline-block;
+			}
+			#current-file {
+				margin: 5pt;
 			}
 			#editor-root {
+				background-color:#CCC;
 				position:relative;
-				height: 400pt;
+				height: 250pt;
 			}
 			.code-container {
 				margin: 10px;
 				padding: 10px;
 				border: 0;
 				width: calc(100% - 32px);
-				height: 400pt;
+				height: 250pt;
 				position: absolute;
 				top: 0;
 				left: 0;
@@ -34,10 +49,6 @@
 				background: transparent;
 				caret-color: black;
 				resize: none;
-			}
-
-			.code-fonts {
-				color: #333;
 			}
 
 			.code-operator, .code-digits, .code-period, .code-escapedStringText {
@@ -73,9 +84,20 @@
 				text-decoration: wavy underline;
 				color: #AA10DD;
 			}
-			#game-canvas {
+			#game-container {
+				flex:1.2;
 				max-width: 99%;
+			}
+			#editor-container {
+				flex: 1;
+				max-width: 99%;
+				min-width: 300pt;
+				padding-left: 5pt;
+			}
+			#game-canvas {
 				background-color: #333;
+				margin: auto;
+				display: block;
 			}
 		</style>
 		<script type='text/javascript' src='duet.js'></script>
@@ -87,35 +109,42 @@
 		</script>
 	</head>
 	<body>
-		<h1>Langjam Gamejam entry: Duet</h1>
-		<canvas id='game-canvas' width='800' height='600' tabindex='1'>
-		</canvas>
-		<br/>
-		<button id='button-pause' onclick='togglePause()'>Pause</button>
-		<h2>Editor</h2>
-		<h4 id='current-file'>Editing a new file</h4>
-		<div id='editor-container'>
-			<div id='editor'>
-				<div id='editor-root'>
-					<textarea id='editor-text' class='code-container' rows='20' 
-						aria-hint='The keyboard can be captured by the text editor. Press escape to toggle this behavior.' spellcheck='false'
-						oninput='Duet.lex(false)' onscroll='sync_scroll()'>#Type code here</textarea>
-					<pre id='highlighting' class='code-container' aria-hidden='true' tabindex='-1'><code id='highlighting-content' class='code-fonts'></code></pre>
-				</div>
+		<div id='main-content'>
+			<div id='game-container'>
+				<h1>Langjam Gamejam entry: Duet</h1>
+				<canvas id='game-canvas' width='800' height='600' tabindex='1'>
+				</canvas>
 				<br/>
-				<p id='editor-status'>Tab Captured. Press Escape to Toggle</p>
-				<button onclick="Duet.compileAndRun()">Compile and Run</button>
+				<button id='button-pause' onclick='togglePause()'>Pause</button>
 			</div>
-			<div id='file-panel'>
-				<h3>Files</h3>
-				<input id='new-file-name' type='text' value='newFile.duet'/>
+			<div id='editor-container'>
+				<h2>Editor</h2>
+				<h4 id='current-file'>Editing a new file</h4>
 				<ul id='files-list'>
 				</ul>
-				<button onclick='Duet.createFile()'>Create File</button>
-				<div id='loaded-images'>
+				<div id='editor'>
+					<div id='editor-root'>
+						<textarea id='editor-text' class='code-container' rows='20' 
+							aria-hint='This text editor can capture tab navigation. Press escape to toggle this behavior.' spellcheck='false'
+							oninput='Duet.lex(false)' onscroll='sync_scroll()'>#Type code here</textarea>
+						<pre id='highlighting' class='code-container' aria-hidden='true' tabindex='-1'><code id='highlighting-content' class='code-fonts'></code></pre>
+					</div>
+					<br/>
+					<p id='editor-status'>Tab Captured. Press Escape to Toggle</p>
+					<button onclick="Duet.compileAndRun()">Compile and Run</button>
+					<p>You can also press Control+Enter to compile.</p>
+					<div id='file-panel'>
+						<input id='new-file-name' type='text' value='newFile.duet'/>
+						<button onclick='Duet.createFile()'>New Script</button>
+
+						<h3>Loaded images</h3>
+						<div id='loaded-images'>
+						</div>
+					</div>
 				</div>
 			</div>
 		</div>
+		
 		<script type='text/javascript' src='editor.js'></script>
 		<script>
 			let editor = new Editor(document.getElementById('editor-text'));

@@ -261,6 +261,12 @@ const Duet = {
 			},
 		},
 		opv: {
+
+			arctan2:unGen([Type.real, 2], (p) => Math.atan(p[1]/p[0]), Type.real),
+			angle2:unGen([Type.real, 2],
+				(p) => Math.atan(p[1]/p[0]) + Math.PI*(p[0] < 0),
+				Type.real
+			),
 			toV: {
 				add:binGen([Type.real], opVV(opCore.add)),
 				subtract:binGen([Type.real], opVV(opCore.sub)),
@@ -312,12 +318,14 @@ const Duet = {
 				args: ['image', [Type.real, 2], Type.real],
 				requiredArgs: 2,
 				return: Type.void,
-				sv: (image, positions, angle = 0) => {
+				sv: (image, positions, angles = [0]) => {
 					//console.log('Drawing:', image, pos, [image.width, image.height]);
 					let cw = image.width/2;
 					let ch = image.height/2;
 
-					for(let pos of positions) {
+					for(let i = 0; i < positions.length; i++) {
+						let pos = positions[i];
+						let angle = angles[i % angles.length];
 						Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
 						Duet.draw2d.rotate(angle);
 						Duet.draw2d.drawImage(image, -cw, -ch);
@@ -333,14 +341,14 @@ const Duet = {
 				sss: (image, position, angle) => {
 					Duet.platform.canvas.drawsprite.ss(image, positions, angle);
 				},
-				ssv: (image, positions, angles) => {
-					angles.map(a => Duet.platform.canvas.drawsprite.sss(image, positions, a));
+				ssv: (image, position, angles) => {
+					angles.map(a => Duet.platform.canvas.drawsprite.sss(image, position, a));
 				},
 				svs: (image, positions, angle) => {
-					Duet.platform.canvas.drawsprite.sv(image, positions, angle);
+					Duet.platform.canvas.drawsprite.sv(image, positions, [angle]);
 				},
 				svv: (image, positions, angles) => {
-					angles.map(a => Duet.platform.canvas.drawsprite.svs(image, positions, a));
+					Duet.platform.canvas.drawsprite.sv(image, positions, angles);
 				}
 			},
 		},
@@ -380,6 +388,8 @@ const Duet = {
 							console.log('Image Loaded:', path);
 							document.getElementById('loaded-images').appendChild(img);
 							Duet.platform.file.sprites[path] = img;
+							img.alt = `Loaded sprite: ${path}`;
+							img.title = `Loaded sprite: ${path}`;
 							resolve(img);
 						}
 						img.onerror = () => {
@@ -1149,8 +1159,8 @@ const Duet = {
 			return token;
 		}
 
-		function skipIgnored() {
-			while(grab(Duet.Token.comment) || grab(Duet.Token.newline)) {
+		function skipIgnored(skipTabs = false) {
+			while(grab(Duet.Token.comment) || grab(Duet.Token.newline) || (skipTabs && grab(Duet.Token.indentation))) {
 				;;
 			}
 		}
@@ -1305,9 +1315,9 @@ const Duet = {
 				while(grab(Duet.Token.comma)) {
 					list.children.push(parseError('Extra comma', 1, -1));
 				}
-				skipIgnored();
+				skipIgnored(true);
 				list.children.push(expression());
-				skipIgnored();
+				skipIgnored(true);
 			}
 			return grow(list);
 		}
