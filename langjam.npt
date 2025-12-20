@@ -9,9 +9,23 @@ m3
 	- Summary
 		p1
 		i3
+		x
 	- Hypothetical program
 		p1
 		i4
+		x
+	- Fire bullets
+		p1
+		i51
+	- Collision detection
+		p1
+		i52
+		- Just circles
+			p1
+			i53
+		- Layers and masks
+			p1
+			i54
 - The Language
 	p1
 	i2
@@ -30,32 +44,141 @@ m3
 	- Compiler
 		p1
 		i8
+		x
 	- The VM
 		p1
 		i9
+		x
+	- Initialize entities with new values
+		p1
+		i29
+		/Possible syntax:
+		/myplayer = player.create(position = [0,0])
+		- Even if we don't get a reference to the value
+			p1
+			i33
+		- Create several with multiple values
+			p1
+			i34
+			/bullet.create(target=this, position = [array of values])
+		- Array manipulation
+			p1
+			i35
+			/zeroes = array.of(6, 0)
+			/one_to_ten = array.between(1, 10)
+			/array.reverse(values)
+	- Free entities
+		p1
+		i58
+		- Destroy objects
+			p1
+			i59
+	- Receive messages
+		p1
+		i36
+		/
+		- Score
+			p1
+			i56
+		- Player damage
+			p1
+			i57
+			/entity player
+			/max_health = 100.0
+			/damage = receive(real)
+			/health = max_health - damage
+	- Conditional events
+		p1
+		i60
+		- Player death
+			p1
+			i61
+		- Collisions
+			p1
+			i62
 	- Figure out events for when values change
 		p1
 		i21
 		/For example:
 		/spawned_enemies = floor(time.seconds/seconds_per_enemy)
 		/
-		/this should only trigger when seconds_per_enemy actually changes
-- Editor Bugs
+		/this should only trigger when the calculated value actually changes
+		- Spawn enemies over time
+			p1
+			i63
+		- Add trails 
+			p1
+			i64
+		- Player fire rate
+			p1
+			i65
+	- Listen to values from the platform
+		p1
+		i30
+		/For example
+		/
+		/time.frame
+		/    # event code here
+	- Listen to values from created nodes
+		p1
+		i31
+	- Type hints
+		p1
+		i37
+		/var: type = value
+	- Local functions
+		p1
+		i38
+	- Non-local functions
+		p1
+		i39
+- Editor
 	p1
 	i10
 	- Switching to and from files messes up the parser classes
 		p1
 		i11
+	- Add tooltips to loaded images so they're easy to reference
+		p1
+		i41
+	- Make it shorter
+		p1
+		i47
+		/It's too tall
+	- Make sure it looks good on other browsers
+		p1
+		i48
 - Bugs
 	p1
 	i14
 	- Invalid token <empty string> if the program ends with a space
 		p1
 		i15
+		x
 		/Or something like that. It's more nuanced, though.
 	- Cannot draw images on Firefox
 		p1
 		i16
+		x
 	- Event with multiple effects causes a hang
 		p1
 		i17
+		x
+- Game
+	p1
+	i42
+	- Clearly indicate the game is paused
+		p1
+		i44
+	- WASD support
+		p1
+		i45
+	- Bigger pause button
+		p1
+		i46
+	- Touch support
+		p1
+		i49
+	- Crosshair is not centered
+		p1
+		i50
