@@ -1,0 +1,5 @@
+entity enemy
+
+speed = 12.0
+position = [0,0]; position + movement*speed
+movement: real, 2 = opv.normalize(game.myplayer.position - position)

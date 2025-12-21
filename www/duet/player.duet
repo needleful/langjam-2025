@@ -1,14 +1,40 @@
+# Our entity type
 entity player
 
+# The most unique aspect of Duet is how it handles variables.
+# There is no assignment, only "bindings".
+# Every variable has exactly one binding.
+# However, variables aren't constant values.
+# Duet infers several aspects of every variable
+#	Its data type
+#	Its storage type: "global" or "instance"
+#		Basically static/class or instance variables in object-oriented languages. 
+#	Its update type: "once", "message", "variable", or "frame"
+#		Every variable knows when it should update based on its value.
+#		For example, 'file.loadsprite' with a constant string 
+#         will only run once for the lifetime of the program.
 sprite = file.loadsprite('assets/player.png')
 crosshair = file.loadsprite('assets/crosshair.png')
+# Obviously, constants will also be evaluated once.
 speed = 10.0
+# Movement is recomputed whenever the input values change
+# Because input is global, 'movement' is also a global value
 movement = [input.right - input.left, input.down - input.up]
+# Position depends on itself, so it needs an 'initializer' and
+#  'integration', separated by a semicolon [;].
+# It will update every frame due to this self-reference.
+# Objects with initializers are also instance variables, 
+#  as the initial value can be set at construction.
 position = canvas.size/2; clamp(position + movement * speed, [0,0], canvas.size)
+# As you might imagine, `time.frame` is the current frame, and updates every frame.
 frame = time.frame
-diff = input.mouse - position
 
+# The other oddity of Duet is all other code execution is done through listeners.
+# Here, we're running this code whenever `frame` changes.
+# I would have the listener on `time.frame` directly, but I couldn't
+# be bothered to implement listeners for non-local variables.
+# Maybe for a 2-week jam.
 frame
 	canvas.drawSprite(sprite, position, 
-		opv.angle2(diff) + pi/2)
+		opv.angle2(input.mouse - position) + pi/2)
 	canvas.drawSprite(crosshair, input.mouse)

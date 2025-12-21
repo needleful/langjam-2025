@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+	<meta charset='utf-8'/>
 	<head>
 		<title>Duet</title>
 		<style>
@@ -19,6 +20,7 @@
 			#files-list {
 				margin: 0;
 				padding: 0;
+				display: inline-block;
 			}
 			#files-list li {
 				display: inline-block;
@@ -28,14 +30,21 @@
 			}
 			#editor-root {
 				position:relative;
-				height: 250pt;
+				height: 55vh;
+				min-height: 200pt;
+			}
+			#errors-list li {
+				display: block;
+				color: red;
 			}
 			.code-container {
+				position: absolute;
+				height: 55vh;
+				min-height: 200pt;
+				tab-size: 4;
 				padding: 10pt;
 				border: 0;
 				width: calc(100% - 32px);
-				height: 250pt;
-				position: absolute;
 				top: 0;
 				left: 0;
 				overflow: scroll;
@@ -95,7 +104,7 @@
 				max-width: 99%;
 			}
 			#editor-container {
-				flex: 1;
+				flex: 1 1;
 				max-width: 99%;
 				min-width: 300pt;
 				padding-left: 5pt;
@@ -108,10 +117,19 @@
 		</style>
 		<script type='text/javascript' src='duet.js'></script>
 		<script type='text/javascript'>
-			Duet.loadObject('duet/game.duet').then(() => {
+			let newFiles = [
+				'duet/game.duet',
+				'duet/player.duet',
+				'duet/enemy.duet'
+			]
+			async function loadSampleProject() {
+				await Duet.loadObject('duet/game.duet');
 				Duet.switchTo('duet/game.duet');
-				Duet.loadObject('duet/player.duet');
-			});
+				for(let i = 1; i < newFiles.length; i++) {
+					await Duet.loadObject(newFiles[i]);
+				}
+			}
+			loadSampleProject();
 		</script>
 	</head>
 	<body>
@@ -122,12 +140,16 @@
 				</canvas>
 				<br/>
 				<button id='button-pause' onclick='togglePause()'>Pause</button>
+				<ul id='errors-list'>
+				</ul>
 			</div>
 			<div id='editor-container'>
 				<h2>Editor</h2>
 				<h4 id='current-file'>Editing a new file</h4>
 				<ul id='files-list'>
 				</ul>
+				<input id='new-file-name' type='text' value='newFile.duet'/>
+				<button onclick='Duet.createFile()'>New Script</button>
 				<div id='editor'>
 					<div id='editor-root'>
 						<textarea id='editor-text' class='code-container' rows='20' 
@@ -140,9 +162,6 @@
 					<button onclick="Duet.compileAndRun()">Compile and Run</button>
 					<p>You can also press Control+Enter to compile.</p>
 					<div id='file-panel'>
-						<input id='new-file-name' type='text' value='newFile.duet'/>
-						<button onclick='Duet.createFile()'>New Script</button>
-
 						<h3>Loaded images</h3>
 						<div id='loaded-images'>
 						</div>
