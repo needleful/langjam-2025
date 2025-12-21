@@ -120,11 +120,11 @@
 			let newFiles = [
 				'duet/game.duet',
 				'duet/player.duet',
-				'duet/enemy.duet'
+				//'duet/enemy.duet'
 			]
 			async function loadSampleProject() {
-				await Duet.loadObject('duet/game.duet');
-				Duet.switchTo('duet/game.duet');
+				await Duet.loadObject(newFiles[0]);
+				Duet.switchTo(newFiles[0]);
 				for(let i = 1; i < newFiles.length; i++) {
 					await Duet.loadObject(newFiles[i]);
 				}

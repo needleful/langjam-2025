@@ -103,7 +103,7 @@ const opCore = {
 function opVV(op) {
 	return function(as, bs) {
 		let r = [];
-		r.length = bs.length;
+		r.length = as.length;
 		for(let i = 0; i < bs.length; i++) {
 			r[i] = op(as[i], bs[i]);
 		}
@@ -611,9 +611,16 @@ const Duet = {
 			pointer < code.length;
 			pointer += VMLength[code[pointer]]
 		) {
-			if(!Duet.instr(typename, stack, code, pointer))
-			{
-				break;
+			try{
+				if(!Duet.instr(typename, stack, code, pointer))
+				{
+					break;
+				}
+			}
+			catch(err) {
+				let c = Duet.readableCode(code);
+				Duet.logError('Error at instruction: ', pointer, ' in code: \n| ', c.join('\n| '), '\n\nStack:\n| ', JSON.stringify(stack));
+				throw err;
 			}
 		}
 		if(stack.length) {
@@ -631,7 +638,13 @@ const Duet = {
 		let e = Duet.entities[typename];
 		for(let alloc of e.compute.allocation) {
 			let varname = alloc[0];
-			e.values[varname] = Duet.eval(typename, alloc[1]);
+			try{
+				e.values[varname] = Duet.eval(typename, alloc[1]);
+			}
+			catch(err) {
+				Duet.logError(`Error allocating ${typename}.${varname}:`, err);
+				Duet.setPaused(true);
+			}
 		}
 	},
 
@@ -683,13 +696,19 @@ const Duet = {
 					let valname = val[0];
 					let start = type.count;
 					type.values[valname].length += type.toCreate.plain;
-					let init = Duet.eval(typename, val[1]);
-					for(let i = start; i < start + type.toCreate.plain; i++) {
-						let val = init;
-						if(Array.isArray(init)) {
-							val = [...init];
+					try {
+						let init = Duet.eval(typename, val[1]);
+						for(let i = start; i < start + type.toCreate.plain; i++) {
+							let val = init;
+							if(Array.isArray(init)) {
+								val = [...init];
+							}
+							type.values[valname][i] = val;
 						}
-						type.values[valname][i] = val;
+					}
+					catch(err) {
+						Duet.logError(`Error creating ${typename}.${varname}:`, err);
+						Duet.setPaused(true);
 					}
 					console.log(`Creation: ${typename}.${valname}: ${type.values[valname]}`); 
 				}
@@ -701,15 +720,27 @@ const Duet = {
 			// Running in the frame
 			for(let val of type.compute.frame) {
 				let valname = val[0];
-				let value = Duet.eval(typename, val[1]);
-				type.values[valname] = value;
+				try {
+					let value = Duet.eval(typename, val[1]);
+					type.values[valname] = value;
+				}
+				catch(err) {
+					Duet.logError(`Error updating ${typename}.${varname}:`, err);
+					Duet.setPaused(true);
+				}
 				if(valname in type.events) {
 					let events = type.events[valname];
 					for(let event of events) {
 						if('condition' in event) {
-							let val = Duet.eval(typename, event.condition);
-							if(!val) {
-								continue;
+							try {
+								let val = Duet.eval(typename, event.condition);
+								if(!val) {
+									continue;
+								}
+							}
+							catch(err) {
+								Duet.logError(`Error on conditional listener for ${typename}${valname}:`, err);
+								Duet.setPaused(true);
 							}
 						}
 						messages.push([typename, event.do]);
@@ -718,7 +749,13 @@ const Duet = {
 			}
 		}
 		for(let message of messages) {
-			Duet.eval(message[0], message[1]);
+			try{
+				Duet.eval(message[0], message[1]);
+			}
+			catch(err) {
+				Duet.logError(`Error processing message for ${message[0]}:`, err);
+				Duet.setPaused(true);
+			}
 		}
 		messages = [];
 		Duet.promises.waiting = [];
@@ -1636,6 +1673,19 @@ const Duet = {
 		return rt;
 	},
 
+	readableCode: (line) => {
+		if(Array.isArray(line[0])) {
+			return line.map(readableCode).flat(Infinity);
+		}
+		let readable = [];
+		for(let i = 0; i < line.length; i += VMLength[line[i]]) {
+			readable.push(VMNames[line[i]]);
+			let len = VMLength[line[i]];
+			readable = readable.concat(line.slice(i+1, i+len));
+		}
+		return readable;
+	},
+
 	unify: (type1, type2) => {
 		// Vector types can unify with vectors of a different length
 		// so long as its length hasn't been specified yet
@@ -2175,16 +2225,7 @@ const Duet = {
 			for(let varname in variables) {
 				let varNode = variables[varname];
 				if('integrate' in varNode) {
-					// Dumb hack for better type inference
-					let iv = varname + '#integrate';
-					graph[iv] = depUnify(varNode.integrate);
-					graph[varname] = depUnify(varNode);
-					if(!graph[iv].length) {
-						graph[varname].push(iv);
-					}
-					else if(!graph[varname].length) {
-						graph[iv].push(varname);
-					}
+					graph[varname] = depUnify(varNode.integrate).concat(depUnify(varNode));
 				}
 				else {
 					graph[varname] = depUnify(varNode);
@@ -2409,12 +2450,6 @@ const Duet = {
 			return varNode;
 		}
 		function printableExp(val) {
-			function readableCode(line) {
-				if(Array.isArray(line[0])) {
-					return line.map(readableCode);
-				}
-				return [VMNames[line[0]]].concat(line.slice(1));
-			}
 			let rtype = Duet.readableType(val.type);
 
 			let rChildren = {};
@@ -2426,7 +2461,7 @@ const Duet = {
 				type: Duet.readableType(val.type),
 				update: UpdateNames[val.update],
 				storage: StorageNames[val.storage],
-				code: readableCode(val.code),
+				code: Duet.readableCode(val.code),
 				children: rChildren
 			};
 			if('integrate' in val) {
@@ -2434,7 +2469,7 @@ const Duet = {
 			}
 			return r;
 		}
-		for(let varname in dependencies) {
+		for(let varname in variables) {
 			checkVar(varname);
 
 			if(varname.endsWith('#integrate')) {

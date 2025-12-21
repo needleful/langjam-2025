@@ -10,9 +10,3 @@ program game
 # We create entities with `<entity name>.create`.
 # See the player script for more
 myplayer = player.create
-
-spawned_enemies = floor(time.frame/200)
-
-# Spawn an enemy here
-spawned_enemies
-	enemy.create(position: (canvas.size/2)-player.position*2)
