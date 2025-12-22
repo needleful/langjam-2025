@@ -517,7 +517,12 @@ const Duet = {
 		}
 		let et = Duet.entities[typename];
 		let startId = et.count + et.toCreate.plain - et.toFree;
-		et.toCreate.plain += count;
+		if(init) {
+			et.toCreate.special.push({count: count, values: init});
+		}
+		else {
+			et.toCreate.plain += count;
+		}
 		// Create a permanent reference to this node.
 		function getRef(id) {
 			if(et.freelist.length) {
@@ -792,30 +797,54 @@ const Duet = {
 			}
 
 			type.count -= type.toFree;
-			if(type.toCreate.plain) {
-				for(let val of type.compute.creation) {
-					let valname = val[0];
+			function createVars(inc, specialInit = null) {
+				function initialize(varname, init) {
+					if(init === undefined) {
+						Duet.logError(`Initializing ${typename}.${varname} to undefined`);
+						Duet.setPaused(true);
+					}
 					let start = type.count;
-					type.values[valname].length += type.toCreate.plain;
-					try {
-						let init = Duet.eval(typename, val[1]);
-						for(let i = start; i < start + type.toCreate.plain; i++) {
-							let val = init;
-							if(Array.isArray(init)) {
-								val = [...init];
-							}
-							type.values[valname][i] = val;
+					type.values[varname].length += inc;
+					for(let i = start; i < start + inc; i++) {
+						let val = init;
+						if(Array.isArray(init) && !specialInit) {
+							val = [...init];
 						}
+						type.values[varname][i] = val;
+					}
+				}
+
+				for(let varname in specialInit) {
+					initialize(varname, specialInit[varname]);
+				}
+					
+				for(let val of type.compute.creation) {
+					let varname = val[0];
+					if(specialInit && varname in specialInit) {
+						continue;
+					}
+					try {
+						initialize(varname, Duet.eval(typename, val[1]));
 					}
 					catch(err) {
-						Duet.logError(`Error creating ${typename}.${varname}:`, err);
+						Duet.logError(`Error initializing ${typename}.${varname}:`, err);
 						Duet.setPaused(true);
 					}
 				}
-				type.count += type.toCreate.plain;
+
+				type.count += inc;
+			}
+			if(type.toCreate.special.length) {
+				for(let init of type.toCreate.special) {
+					createVars(init.count, init.values);
+				}
+			}
+			if(type.toCreate.plain) {
+				createVars(type.toCreate.plain);
 			}
 			type.toFree = 0;
 			type.toCreate.plain = 0;
+			type.toCreate.special = [];
 
 			// Running in the frame
 			if(!type.count) {
@@ -823,13 +852,23 @@ const Duet = {
 			}
 			for(let val of type.compute.frame) {
 				let valname = val[0];
+				let oldVal = type.values[valname];
 				let newval;
 				try {
+					if(oldVal === undefined) {
+						Duet.logError(`Error: ${typename}.${valname} became undefined between frames!`);
+						Duet.setPaused(true);
+					}
 					newval = Duet.eval(typename, val[1]);
+					if(newval === undefined) {
+						Duet.logError(`Error: assigning undefined to ${typename}.${valname}`);
+						Duet.setPaused(true);
+					}
 				}
 				catch(err) {
 					Duet.logError(`Could not update ${typename}.${valname}`);
 					Duet.setPaused(true);
+					newval = oldVal;
 				}
 
 				let addMessage = true;
@@ -838,7 +877,6 @@ const Duet = {
 					let event = type.events[valname];
 					// Check if global value changed
 					if(event.storage == Storage.shared) {
-						let oldVal = type.values[valname];
 						if(oldVal == newval) {
 							addMessage = false;
 						}
@@ -1786,6 +1824,34 @@ const Duet = {
 		return rt;
 	},
 
+	initVal:(type) =>{
+		if(Array.isArray(type)) {
+			if(type[0] == Type.entity) {
+				return null;
+			}
+			else if(type.length == 1) {
+				return [];
+			}
+			else {
+				let r = [];
+				r.length = type[1];
+				for(let i = 0; i < r.length; i++) {
+					r[i] = Duet.initVal(type[0]);
+				}
+				return r;
+			}
+		}
+		else if(type == Type.real || type == Type.integer) {
+			return 0;
+		}
+		else if(type == Type.string) {
+			return '';
+		}
+		else {
+			return null;
+		}
+	},
+
 	readableCode: (line) => {
 		if(Array.isArray(line[0])) {
 			return line.map(readableCode).flat(Infinity);
@@ -2729,9 +2795,8 @@ const Duet = {
 					code: varNode.integrate.code
 				};
 			}
-			//console.log(varname, 'typeInfo:', result);
-			// Apply all the computation things after resolving types and overloads
-			entity.values[varname] = varNode.storage == Storage.unique? [] : null;
+
+			entity.values[varname] = varNode.storage == Storage.unique? [] : Duet.initVal(varNode.type);
 			if(varNode.update == Update.once) {
 				if(varNode.storage == Storage.unique){
 					entity.compute.creation.push([varname, varNode.code]);

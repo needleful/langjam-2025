@@ -52,11 +52,13 @@ m3
 	- Initialize entities with new values
 		p1
 		i29
+		x
 		/Possible syntax:
 		/myplayer = player.create(position = [0,0])
 		- Even if we don't get a reference to the value
 			p1
 			i33
+			x
 		- Create several with multiple values
 			p1
 			i34
@@ -195,6 +197,10 @@ m3
 	- Make sure event names actually exist
 		p1
 		i116
+	- Constructor doesn't believe some unique types are unique
+		p1
+		i125
+		/Dependency ordering?
 - Game
 	p1
 	i42

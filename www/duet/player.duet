@@ -46,7 +46,7 @@ frame
 	canvas.drawSprite(crosshair, input.mouse)
 
 fire
-	bullet.create(direction = opv.normalize(aim))
+	bullet.create(direction = opv.normalize(aim), position = position)
 
 #firing
 #	canvas.drawtext(tostring(firing), position + [10, 10])
