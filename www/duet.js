@@ -44,19 +44,21 @@ let StorageNames = {};
 
 const VM = {
 	constant: 0,
-	local: 1, 
+	localInstance: 1,
 	call: 2,
 	callAsync: 3,
 	array: 4,
 	read: 5,
-	nonlocal: 6
+	nonlocal: 6,
+	localStatic: 7, 
 };
 
 let VMNames = {};
 
 const VMLength = {
 	[[VM.constant]]: 2,
-	[[VM.local]]: 2,
+	[[VM.localInstance]]: 2,
+	[[VM.localStatic]]: 2,
 	[[VM.nonlocal]]: 2,
 	[[VM.call]]: 3,
 	[[VM.callAsync]]: 3,
@@ -215,6 +217,11 @@ const Duet = {
 			overload: 'ceil',
 			baseType: Type.real,
 			argCount: 1,
+		},
+		tostring: {
+			overload: 'tostring',
+			baseType: Type.real,
+			argCount: 1
 		}
 	},
 	OpNames: {
@@ -271,7 +278,8 @@ const Duet = {
 			},
 
 			floor: unGen(Type.real, Math.floor),
-			floor: unGen(Type.real, Math.ceil)
+			ceil: unGen(Type.real, Math.ceil),
+			tostring: unGen(Type.real, String, Type.string)
 		},
 		opv: {
 			arctan2:unGen([Type.real, 2], (p) => Math.atan(p[1]/p[0]), Type.real),
@@ -328,7 +336,8 @@ const Duet = {
 					r[i] = m? v[i]/m : 0.0;
 				}
 				return r;
-			})
+			}),
+			tostring: unGen([Type.real], String, Type.string)
 		},
 		canvas: {
 			clearcolor: {
@@ -343,6 +352,38 @@ const Duet = {
 					let c = Duet.canvas;
 					return [c.width, c.height];
 				}
+			},
+			drawtext: {
+				type: Type.function,
+				args: [Type.string, [Type.real, 2], Type.real],
+				requiredArgs: 2,
+				return: Type.void,
+				vv: (text, positions, angles = [0]) => {
+					for(let i = 0; i < positions.length; i++) {
+						let pos = positions[i];
+						let angle = angles[i % angles.length];
+						Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
+						Duet.draw2d.rotate(angle);
+						Duet.draw2d.fillText(text[i],0,0);
+					}
+				},
+				sv: (text, positions, angles = [0]) => {
+					for(let i = 0; i < positions.length; i++) {
+						let pos = positions[i];
+						let angle = angles[i % angles.length];
+						Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
+						Duet.draw2d.rotate(angle);
+						Duet.draw2d.fillText(text,0,0);
+					}
+				},
+				ss: (text, pos, angle = 0) => {
+					Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
+					Duet.draw2d.rotate(angle);
+					Duet.draw2d.fillText(text,0,0);
+				},
+				svv:(t,p,a) => Duet.platform.canvas.drawtext.vv(t,p,a),
+				svv:(t,p,a) => Duet.platform.canvas.drawtext.sv(t,p,a),
+				sss:(t,p,a) => Duet.platform.canvas.drawtext.ss(t,p,a),
 			},
 			drawsprite: {
 				type: Type.function,
@@ -369,18 +410,14 @@ const Duet = {
 					Duet.draw2d.rotate(angle);
 					Duet.draw2d.drawImage(image, -cw, -ch);
 				},
-				sss: (image, position, angle) => {
-					Duet.platform.canvas.drawsprite.ss(image, positions, angle);
-				},
-				ssv: (image, position, angles) => {
-					angles.map(a => Duet.platform.canvas.drawsprite.sss(image, position, a));
-				},
-				svs: (image, positions, angle) => {
-					Duet.platform.canvas.drawsprite.sv(image, positions, [angle]);
-				},
-				svv: (image, positions, angles) => {
-					Duet.platform.canvas.drawsprite.sv(image, positions, angles);
-				}
+				sss: (i, p, a) =>
+					Duet.platform.canvas.drawsprite.ss(i, ps, a),
+				ssv: (i, p, as) =>
+					as.map(a => Duet.platform.canvas.drawsprite.sss(i, p, a)),
+				svs: (i, ps, a) =>
+					Duet.platform.canvas.drawsprite.sv(i, ps, [a]),
+				svv: (i, ps, as) =>
+					Duet.platform.canvas.drawsprite.sv(i, ps, as)
 			},
 		},
 		paused: {
@@ -557,7 +594,7 @@ const Duet = {
 		Duet._keySet(e.key, 0);
 	},
 
-	instr: (typename, stack, code, pointer) => {
+	instr: (typename, stack, code, pointer, indexed) => {
 		let instr = code[pointer];
 		if(!(instr in VMLength)) {
 			Duet.logError('Not an implemented instruction:', VMNames[instr], instr, code, pointer);
@@ -572,8 +609,22 @@ const Duet = {
 			stack.push(arg(1));
 			break;
 		}
-		case VM.local: {
+		case VM.localStatic: {
 			stack.push(Duet.entities[typename].values[arg(1)]);
+			break;
+		} 
+		case VM.localInstance: {
+			let val = Duet.entities[typename].values[arg(1)];
+			// We're indexing a subset of values
+			if(indexed) {
+				let newval = [];
+				newval.length = indexed.length;
+				for(let i = 0; i < indexed.length; i++) {
+					newval[i] = val[indexed[i]];
+				}
+				val = newval;
+			}
+			stack.push(val);
 			break;
 		}
 		case VM.nonlocal:{
@@ -636,7 +687,7 @@ const Duet = {
 		return true;
 	},
 
-	eval: (typename, code) => {
+	eval: (typename, code, indexed = false) => {
 		if(typeof(typename) != 'string') {
 			Duet.logError('Typename expected');
 		}
@@ -647,7 +698,7 @@ const Duet = {
 			pointer += VMLength[code[pointer]]
 		) {
 			try{
-				if(!Duet.instr(typename, stack, code, pointer))
+				if(!Duet.instr(typename, stack, code, pointer, indexed))
 				{
 					break;
 				}
@@ -661,7 +712,7 @@ const Duet = {
 						str += '\n        ^^^^^^^^^^^^^^^^^^^^^^';
 					}
 				}
-				Duet.logError(`Error at instruction: pointer\n`, err, str, '\n\nStack:\n| ', JSON.stringify(stack));
+				Duet.logError(`Error at instruction: ${pointer}\n`, err, str, '\n\nStack:\n| ', JSON.stringify(stack));
 				throw err;
 			}
 		}
@@ -692,6 +743,7 @@ const Duet = {
 
 	run: () => {
 		Duet.draw2d = Duet.canvas.getContext('2d');
+		Duet.draw2d.fillStyle = 'white';
 		// Default events
 		Duet.canvas.onkeydown = Duet.press;
 		Duet.canvas.onkeyup = Duet.release;
@@ -773,28 +825,44 @@ const Duet = {
 					Duet.setPaused(true);
 				}
 
+				let addMessage = true;
+				let indexed = false;
 				if(valname in type.events) {
-					let events = type.events[valname];
-					for(let event of events) {
-						if('condition' in event) {
-							try {
-								let val = Duet.eval(typename, event.condition);
-								if(!val) {
-									continue;
-								}
-							}
-							catch(err) {
-								Duet.logError(`Error on conditional listener for ${typename}${valname}:`, err);
-								Duet.setPaused(true);
+					let event = type.events[valname];
+					// Check if global value changed
+					if(event.storage == Storage.static) {
+						let oldVal = type.values[valname];
+						if(oldVal == newval) {
+							addMessage = false;
+						}
+					}
+					// Check each instance for changes
+					else {
+						indexed = [];
+						let oldVal = type.values[valname];
+						for(let i = 0; i < oldVal.length; i++) {
+							if(oldVal[i] != newval[i]) {
+								indexed.push(i);
 							}
 						}
-						else if(event.storage == Storage.static) {
-							let oldVal = type.values[valname];
-							if(oldVal == newval) {
-								continue;
+						if(!indexed.length) {
+							addMessage = false;
+						}
+					}
+					if('conditional' in event) {
+						try {
+							let val = Duet.eval(typename, event.condition);
+							if(!val) {
+								addMessage = false;
 							}
 						}
-						messages.push([typename, event.do]);
+						catch(err) {
+							Duet.logError(`Error on conditional listener for ${typename}${valname}:`, err);
+							Duet.setPaused(true);
+						}
+					}
+					if(addMessage) {
+						messages.push([typename, event.do, indexed]);
 					}
 				}
 				type.values[valname] = newval;
@@ -802,7 +870,7 @@ const Duet = {
 		}
 		for(let message of messages) {
 			try{
-				Duet.eval(message[0], message[1]);
+				Duet.eval(...message);
 			}
 			catch(err) {
 				Duet.logError(`Error processing message for ${message[0]}:`, err);
@@ -1963,7 +2031,7 @@ const Duet = {
 						return defaultCode(
 							acNode,
 							Type.unknown,
-							[ VM.local, ac.text[0] ],
+							[ VM.localInstance, ac.text[0] ],
 							[],
 							[ac.text[0]]
 						);
@@ -2330,7 +2398,7 @@ const Duet = {
 				if(known(node.type)) {
 					node.code = node.code.flat(Infinity);
 				}
-				else if(node.code[0] == VM.local) {
+				else if(node.code[0] == VM.localInstance) {
 					let locName = node.code[1];
 					if(locName in variables && variables[locName].type != Type.unknown) {
 						let l = variables[locName];
@@ -2340,6 +2408,9 @@ const Duet = {
 					}
 					else {
 						err(`COMPILER BUG: could not determine type of variable: '${locName}'`, node.parseNode);
+					}
+					if(node.storage == Storage.static) {
+						node.code[0] = VM.localStatic;
 					}
 				}
 				else if(node.code[0] == VM.nonlocal) {
@@ -2392,7 +2463,7 @@ const Duet = {
 				}
 				return node;
 			}
-			// Either VM.call, VM.asyncCall, VM.array, or VM.local
+			// Either VM.call, VM.asyncCall, VM.array, or VM.localInstance
 			let instr = node.code;
 			let code = [];
 
@@ -2607,7 +2678,7 @@ const Duet = {
 				checkExp(eventName, line);
 				eventCode = eventCode.concat(line.code);
 			}
-			entity.events[eventName] = [{do: eventCode, storage: eventStorage}];
+			entity.events[eventName] = {do: eventCode, storage: eventStorage};
 		}
 	}
 };

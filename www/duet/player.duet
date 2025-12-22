@@ -29,10 +29,10 @@ position = canvas.size/2; clamp(position + movement * speed, [0,0], canvas.size)
 # As you might imagine, `time.frame` is the current frame, and updates every frame.
 frame = time.frame
 
-# Fire a bullet every 10 frames
-framesPerBullet = 10.0
-firing = 0; firing + input.click.left/framesPerBullet
-fire = floor(firing)
+# Fire a bullet every few frames
+framesPerBullet = 5.0
+firing = 0; input.click.left*(firing + 1)/framesPerBullet
+fire = ceil(firing)
 
 # The other oddity of Duet is all other code execution is done through listeners.
 # Here, we're running this code whenever `frame` changes.
@@ -46,3 +46,7 @@ frame
 
 fire
 	bullet.create
+
+#firing
+#	canvas.drawtext(tostring(firing), position + [10, 10])
+#	canvas.drawtext(tostring(fire), position + [10, 30])
