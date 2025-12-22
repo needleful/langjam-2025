@@ -353,6 +353,40 @@ const Duet = {
 					return [c.width, c.height];
 				}
 			},
+			drawsprite: {
+				type: Type.function,
+				args: ['image', [Type.real, 2], Type.real],
+				requiredArgs: 2,
+				return: Type.void,
+				sv: (image, positions, angles = [0]) => {
+					//console.log('Drawing:', image, pos, [image.width, image.height]);
+					let cw = image.width/2;
+					let ch = image.height/2;
+
+					for(let i = 0; i < positions.length; i++) {
+						let pos = positions[i];
+						let angle = angles[i % angles.length];
+						Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
+						Duet.draw2d.rotate(angle);
+						Duet.draw2d.drawImage(image, -cw, -ch);
+					}
+				},
+				ss: (image, pos, angle = 0) => {
+					let cw = image.width/2;
+					let ch = image.height/2;
+					Duet.draw2d.setTransform(1, 0, 0, 1, pos[0] - cw, pos[1] - ch);
+					Duet.draw2d.rotate(angle);
+					Duet.draw2d.drawImage(image, -cw, -ch);
+				},
+				sss: (i, p, a) =>
+					Duet.platform.canvas.drawsprite.ss(i, p, a),
+				ssv: (i, p, as) =>
+					as.map(a => Duet.platform.canvas.drawsprite.sss(i, p, a)),
+				svs: (i, ps, a) =>
+					Duet.platform.canvas.drawsprite.sv(i, ps, [a]),
+				svv: (i, ps, as) =>
+					Duet.platform.canvas.drawsprite.sv(i, ps, as)
+			},
 			drawtext: {
 				type: Type.function,
 				args: [Type.string, [Type.real, 2], Type.real],
@@ -384,40 +418,6 @@ const Duet = {
 				svv:(t,p,a) => Duet.platform.canvas.drawtext.vv(t,p,a),
 				svv:(t,p,a) => Duet.platform.canvas.drawtext.sv(t,p,a),
 				sss:(t,p,a) => Duet.platform.canvas.drawtext.ss(t,p,a),
-			},
-			drawsprite: {
-				type: Type.function,
-				args: ['image', [Type.real, 2], Type.real],
-				requiredArgs: 2,
-				return: Type.void,
-				sv: (image, positions, angles = [0]) => {
-					//console.log('Drawing:', image, pos, [image.width, image.height]);
-					let cw = image.width/2;
-					let ch = image.height/2;
-
-					for(let i = 0; i < positions.length; i++) {
-						let pos = positions[i];
-						let angle = angles[i % angles.length];
-						Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
-						Duet.draw2d.rotate(angle);
-						Duet.draw2d.drawImage(image, -cw, -ch);
-					}
-				},
-				ss: (image, pos, angle = 0) => {
-					let cw = image.width/2;
-					let ch = image.height/2;
-					Duet.draw2d.setTransform(1, 0, 0, 1, pos[0] - cw, pos[1] - ch);
-					Duet.draw2d.rotate(angle);
-					Duet.draw2d.drawImage(image, -cw, -ch);
-				},
-				sss: (i, p, a) =>
-					Duet.platform.canvas.drawsprite.ss(i, ps, a),
-				ssv: (i, p, as) =>
-					as.map(a => Duet.platform.canvas.drawsprite.sss(i, p, a)),
-				svs: (i, ps, a) =>
-					Duet.platform.canvas.drawsprite.sv(i, ps, [a]),
-				svv: (i, ps, as) =>
-					Duet.platform.canvas.drawsprite.sv(i, ps, as)
 			},
 		},
 		paused: {
@@ -2098,6 +2098,31 @@ const Duet = {
 				return defaultCode(acNode);
 			}
 		}
+		const specialForms = {
+			unique: 1
+		};
+		function specialForm(kind, expNode) {
+			let args = expNode.children[1];
+			if(args.type != Duet.ParseNode.valueList) {
+				err(`Expected a list of arguments for the function ${name.text.join('.')}`, expNode);
+				return defaultCode(expNode);
+			}
+			if(args.children.length != specialForms[kind]) {
+				err(`Special function '${kind}' expected ${specialForms[kind]} arguments, but received ${args.children.length}`, args);
+				if(!args.children.length) {
+					return defaultCode(expNode);
+				}
+			}
+			if(kind == 'unique') {
+				let exp = analyzeExp(args.children[0]);
+				exp.storage = Storage.unique;
+				return exp;
+			}
+			else {
+				err(`Unknown special function: '${kind}'`, expNode.children[0]);
+				return analyzeExp(args.children[0]);
+			}
+		}
 		/* A dictionary
 			parseNode, type, update, storage,
 			children: array of sub-expressions,
@@ -2161,7 +2186,11 @@ const Duet = {
 				else if(name.type == AcType.ctor) {
 					return ctorCode(expNode, name);
 				}
-				else if(name.type != AcType.funcName && name.type != AcType.overload) {
+
+				if(name.text.length == 1 && name.text[0] in specialForms) {
+					return specialForm(name.text[0], expNode);
+				}
+				if(name.type != AcType.funcName && name.type != AcType.overload) {
 					err(`Unknown function: [${name.text.join('.')}]`, expNode.children[0]);
 					return defaultCode(expNode);
 				}
@@ -2309,7 +2338,7 @@ const Duet = {
 				else if(node.children.length == 3) {
 					variables[name] = value1;
 					let v = variables[name];
-					v.storage = Storage.unique;
+					//v.storage = Storage.unique;
 					v.integrate = analyzeExp(node.children[2]);
 				}
 				else{
@@ -2365,6 +2394,8 @@ const Duet = {
 				let varNode = variables[varname];
 				if('integrate' in varNode) {
 					graph[varname] = depUnify(varNode.integrate).concat(depUnify(varNode));
+					varNode.storage = Math.max(varNode.storage, varNode.integrate.storage);
+					varNode.update = Math.max(varNode.update, varNode.integrate.update);
 				}
 				else {
 					graph[varname] = depUnify(varNode);
@@ -2588,10 +2619,9 @@ const Duet = {
 			for(let i = 0; i < dependencies[varname].length; i++) {
 				let dep = dependencies[varname][i];
 				if(dep == varname) {
-					// For now: self-dependent variables 
-					// are always updated each frame and per-instance
+					// Self-dependent variables are always updated each frame
 					varNode.update = Update.frame;
-					varNode.storage = Storage.unique;
+					//varNode.storage = Storage.unique;
 					continue;
 				};
 				// We don't need to figure out dependencies' types 
@@ -2601,12 +2631,18 @@ const Duet = {
 					checkVar(dep, visited);
 				}
 			}
+			for(let dep of dependencies[varname]) {
+				varNode.storage = Math.max(varNode.storage, variables[dep].storage);
+				varNode.update = Math.max(varNode.update, variables[dep].update);
+			}
 			checked[varname] = checkExp(varname, varNode);
 			if('integrate' in varNode) {
 				let t2 = checkExp(varname, varNode.integrate);
 				if(!Duet.unify(varNode.type, t2.type)) {
 					err(`Initial value and integration for ${varname} have differing types: ${Duet.readableType(varNode.type)} versus ${Duet.readableType(t2.type)}`, varNode.parseNode);
 				}
+				varNode.storage = Math.max(varNode.storage, t2.storage);
+				varNode.update = Math.max(varNode.update, t2.update);
 			}
 			return varNode;
 		}
@@ -2664,7 +2700,12 @@ const Duet = {
 			}
 			else if(varNode.update == Update.frame) {
 				if('integrate' in varNode) {
-					entity.compute.creation.push([varname, varNode.code]);
+					if(varNode.storage == Storage.unique){
+						entity.compute.creation.push([varname, varNode.code]);
+					} 
+					else {
+						entity.compute.allocation.push([varname, varNode.code]);
+					}
 					entity.compute.frame.push([varname, varNode.integrate.code]);
 				}
 				else {
