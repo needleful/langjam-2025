@@ -7,4 +7,4 @@ position = unique([0,0]); position + movement*speed
 frame = time.frame
 
 frame
-	canvas.drawSprite(sprite, position)
+	canvas.drawSprite(sprite, position, opv.angle2(movement))

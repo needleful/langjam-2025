@@ -8,4 +8,4 @@ position = canvas.size/2; position+direction*speed
 frame = time.frame
 
 frame
-	canvas.drawsprite(sprite, position)
+	canvas.drawsprite(sprite, position, opv.angle2(direction) + pi/2)

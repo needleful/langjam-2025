@@ -42,8 +42,7 @@ aim = input.mouse - position
 # be bothered to implement listeners for non-local variables.
 # Maybe for a 2-week jam.
 frame
-	canvas.drawSprite(sprite, position, 
-		opv.angle2(aim) + pi/2)
+	canvas.drawSprite(sprite, position, opv.angle2(aim) + pi/2)
 	canvas.drawSprite(crosshair, input.mouse)
 
 fire

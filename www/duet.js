@@ -724,6 +724,13 @@ const Duet = {
 		}
 	},
 
+	dictionary: {
+		insert: (dict, key, value) => {
+			dict[key] = value;
+			return dict;
+		}
+	},
+
 	allocate: (typename) => {
 		if(!(typename in Duet.entities)) {
 			Duet.logError('No such entity type: ', typename);
@@ -753,7 +760,7 @@ const Duet = {
 		for(let type in Duet.entities) {
 			Duet.allocate(type)
 		}
-		Duet.create(Duet.program, 1);
+		Duet.create(Duet.program);
 
 		setTimeout(Duet.frame, Duet.platform.time.deltams.value);
 	},
@@ -1649,7 +1656,7 @@ const Duet = {
 			return grow(node);
 		}
 
-		function isOp(text, ex) {
+		function isOpEx(ex, text) {
 			if(ex.children.length != 3) {
 				return false;
 			}
@@ -1695,7 +1702,7 @@ const Duet = {
 		}
 
 		function binding(ex) {
-			if(!isOp('=', ex)) {
+			if(!isOpEx(ex, '=')) {
 				return null;
 			}
 			let bindNode = newNode(Duet.ParseNode.binding);
@@ -1703,7 +1710,7 @@ const Duet = {
 			let value = ex.children[2];
 
 			bindNode.start = decl.start;
-			if(isOp(';', value)) {
+			if(isOpEx(value, ';')) {
 				let init = value.children[1];
 				let integrate = value.children[2];
 				bindNode.children = [decl, init, integrate];
@@ -1856,6 +1863,10 @@ const Duet = {
 
 	analyze: (filename) => {
 		let file = Duet.files[filename];
+		let tree = file.parseTree.node;
+		let tokens = file.tokens;
+		let lowText = file.text.toLowerCase();
+
 		let entity = {
 			type: [],
 			source: filename,
@@ -1876,12 +1887,8 @@ const Duet = {
 			references: [],
 			freelist: []
 		};
-		let tree = file.parseTree.node;
 		let errors = [];
 		let dependencies = [];
-		let tokens = file.tokens;
-		let lowText = Duet.files[filename].text.toLowerCase();
-
 		let variables = {};
 		let events = {};
 
@@ -1913,6 +1920,17 @@ const Duet = {
 			index: 4,
 			invalid: 5
 		};
+
+		function opEq(ex, text) {
+			if(ex.children.length != 3) {
+				return false;
+			}
+			let op = ex.children[0];
+			return op.length == 1 && 
+				op.type == Duet.ParseNode.operator && 
+				tokens[op.start].length == text.length && 
+				tkText(op.start) == text;
+		}
 
 		/* Return a dictionary
 			type: AcType,
@@ -1983,22 +2001,51 @@ const Duet = {
 			}
 			return ac;
 		}
+		// TODO: determine if we need to create a reference
+		// Or just create a separate function to get one
 		function ctorCode(ctorNode, ac) {
-			function initCode() {
-				return [VM.constant, {}];
-			}
 			let etype = ac.text[0];
-			return defaultCode(
-				ctorNode,
-				[Type.entity, etype],
-				[
-					[VM.constant, etype],
-					[VM.constant, 1],
-					[VM.constant, true],
-					initCode(),
-					[VM.call, Duet.create, 4]
-				]
-			);
+			if(ctorNode.children.length < 2) {
+				return defaultCode(
+					ctorNode,
+					[Type.entity, etype],
+					[
+						[VM.constant, etype],
+						[VM.constant, 1],
+						[VM.constant, true],
+						[VM.call, Duet.create, 3]
+					]
+				);
+			}
+			else {
+				let args = ctorNode.children[1];
+				let init = [];
+				let children = [];
+				for(let i = 0; i < args.children.length; i++) {
+					let eq = args.children[i];
+					if(!opEq(eq, '=')) {
+						err(`Expected no arguments or an assignment, like '<field> = <value>', inside constructor`, eq);
+					}
+					let name = eq.children[1];
+					let value = eq.children[2];
+					if(name.type != Duet.ParseNode.accessor || name.length > 1) {
+						err(`Expected a name on the left side of [=] (initialization)`, name);
+					}
+					init.push(tkText(name.start));
+					children.push(analyzeExp(value));
+				}
+				let r = defaultCode(
+					ctorNode,
+					[Type.entity, etype],
+					// Code will be created during typechecking
+					[VM.call, Duet.create, -1],
+					children
+				);
+				r.ctorSpecial = init;
+				dependencies.push(etype);
+
+				return r;
+			}
 		}
 		function accessorCode(acNode, ac) {
 			switch(ac.type) {
@@ -2060,6 +2107,7 @@ const Duet = {
 					return code;
 				}
 			}
+			// A constructor without arguments
 			case AcType.ctor: {
 				return ctorCode(acNode, ac);
 				break;
@@ -2545,6 +2593,37 @@ const Duet = {
 				node.code = code.concat(node.code);
 			}
 
+			function unifyCtor() {
+				let typename = node.type[1];
+				code = [
+					VM.constant, typename,
+					VM.constant, 1,
+					VM.constant, true,
+					VM.constant, {}
+				];
+				let einfo = analysis[analysis.entities[typename]];
+				for(let i  = 0; i < node.ctorSpecial.length; i++) {
+					let vname = node.ctorSpecial[i];
+					let val = node.children[i];
+					if(!(vname in einfo.variables)) {
+						err(`Type '${typename}' has no such variable to initialize: ${vname}`, val.parseNode);
+					}
+					let varinfo = einfo.variables[vname];
+					let exType = varinfo.type;
+					if(varinfo.storage != Storage.unique) {
+						err(`${typename}.${vname} is a shared type, and cannot be initialized. Try marking it with '${vname} = unique(<value>)' if you want to change it.`, val.parseNode);
+					}
+					if(!Duet.unify(val.type, exType)) {
+						err(`Tried to initialize ${typename}.${vname} of type '${Duet.readableType(exType)}' with a value of type '${Duet.readableType(val.type)}'`, val.parseNode);
+					}
+					code = code
+						.concat([VM.constant, vname])
+						.concat(val.code)
+						.concat([VM.call, Duet.dictionary.insert, 3]);
+				}
+				node.code = code.concat([VM.call, Duet.create, 4]);
+			}
+
 			for(let i = 0; i < node.children.length; i++) {
 				let c = node.children[i];
 				checkExp(varname, c);
@@ -2552,22 +2631,22 @@ const Duet = {
 				node.storage = Math.max(node.storage, c.storage);
 				// Figure out how to do inference and unification for the given instruction
 			}
-			let unifyChildren;
 			switch(node.code[0]) {
 			case VM.call:
+				if('ctorSpecial' in node) {
+					unifyCtor();
+					break;
+				}
 			case VM.callAsync:
-				unifyChildren = unifyFunc;
+				unifyFunc();
 				break;
 			case VM.array:
-				unifyChildren = unifyArray;
+				unifyArray();
 				break;
 			default:
 				err(`COMPILER BUG: Unification of VM.${VMNames[node.code[0]]} Not implemented.`, node.parseNode);
-				unifyChildren = () => {};
 				break;
 			}
-			unifyChildren();
-			// TODO: figure out unifying the types
 			return node;
 		}
 
