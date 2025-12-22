@@ -2,6 +2,8 @@ entity bullet
 
 sprite = file.loadsprite('assets/bullet.png')
 speed = 20.0
+# The special function 'unique()' marks this value as unique.
+# This lets us control each entity's direction independently.
 direction = unique([1, 0])
 position = canvas.size/2; position+direction*speed
 

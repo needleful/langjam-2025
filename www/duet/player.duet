@@ -23,8 +23,6 @@ movement = [input.right - input.left, input.down - input.up]
 # Position depends on itself, so it needs an 'initializer' and
 #  'integration', separated by a semicolon [;].
 # It will update every frame due to this self-reference.
-# Objects with initializers are also instance variables, 
-#  as the initial value can be set at construction.
 position = canvas.size/2; clamp(position + movement * speed, [0,0], canvas.size)
 # As you might imagine, `time.frame` is the current frame, and updates every frame.
 frame = time.frame
