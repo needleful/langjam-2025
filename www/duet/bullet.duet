@@ -1,0 +1,11 @@
+entity bullet
+
+sprite = file.loadsprite('assets/bullet.png')
+speed = 20.0
+direction = [1, 0]
+position = canvas.size/2; position+direction*speed
+
+frame = time.frame
+
+frame
+	canvas.drawsprite(sprite, position)

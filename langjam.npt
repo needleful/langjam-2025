@@ -105,6 +105,7 @@ m3
 		- Spawn enemies over time
 			p1
 			i63
+			x
 		- Add trails
 			p1
 			i64
@@ -134,9 +135,13 @@ m3
 	- Typecheck dependencies in-order across different entities
 		p1
 		i98
-	- Have appropriate errors when accessing an instance variable from a typename
+	- Correct type-checking for typename.instance_field
 		p1
 		i99
+		/It returns an array
+	- Specify variables that can be initialized to different values
+		p1
+		i120
 - Editor
 	p1
 	i10

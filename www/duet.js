@@ -36,7 +36,7 @@ const Update = {
 let UpdateNames = {};
 
 const Storage = {
-	global: 0,
+	static: 0,
 	instance: 1,
 };
 
@@ -524,8 +524,8 @@ const Duet = {
 			console.warn('I can\'t be bothered');
 		}
 		else {
-			m.left = event.buttons & 1;
-			m.right = event.buttons & 2 >> 1;
+			m.left.value = event.buttons & 1;
+			m.right.value = event.buttons & 2 >> 1;
 		}
 	},
 	mousemove: (event) => {
@@ -788,7 +788,7 @@ const Duet = {
 								Duet.setPaused(true);
 							}
 						}
-						else if(event.storage == Storage.global) {
+						else if(event.storage == Storage.static) {
 							let oldVal = type.values[valname];
 							if(oldVal == newval) {
 								continue;
@@ -866,7 +866,7 @@ const Duet = {
 		Duet.addObject(id, {
 			type:"Beats Me",
 			path: path,
-			text: await response.text()
+			text: (await response.text()).replaceAll('\r\n', '\n').replaceAll('\r', '\n'),
 		}, false);
 	},
 	addObject: (id, info, p_switch = true) => {
@@ -1075,13 +1075,13 @@ const Duet = {
 		const r_ident = /^\p{Alpha}[\p{Alpha}\d_]*/u;
 		const r_digits = /^\d(_?\d)*/;
 		const r_exp = /^[eE][+\-]/;
-		const r_comment = /^\#.*(\n|$)/;
+		const r_comment = /^\#.*[\n\r]/;
 		const r_newline = /^(\s*[\n\r])+/;
 		const r_indent = /^\t+/;
 		// For now, just single-character escapes
 		const r_escaped = /^\\./;
 		// catch-all for operator-like characters
-		const r_operator = /^[^\s\d\p{Alpha}_[\]{}()']+/u;
+		const r_operator = /^[^\s\d\p{Alpha}_[\]{}()'#]+/u;
 		const r_text = /^[^\'\\]+/;
 		const r_equal = /^=[^<>]/;
 
@@ -1294,7 +1294,7 @@ const Duet = {
 			}
 			let type = grab(Duet.Token.ident);
 			if(!type) {
-				return parseError('The script should start with a type and name');
+				return parseError(`The script should start with a type and name. Found '${Duet.TokenNames[peek().type]}'`);
 			}
 			let typeName = tkText(type);
 			if(typeName != 'program' && typeName != 'entity') {
@@ -1851,7 +1851,7 @@ const Duet = {
 				parseNode:node,
 				type: type,
 				update: Update.once,
-				storage: Storage.global,
+				storage: Storage.static,
 				code: code,
 				children: children,
 				dependencies: dependencies
@@ -1979,7 +1979,7 @@ const Duet = {
 					}
 				}
 
-				if(!('type' in ac.ref)) {
+				if(!(ac.ref && 'type' in ac.ref)) {
 					err(`Not a valid platform variable: ${ac.text.join('.')}`, acNode);
 					return defaultCode(acNode);
 				}
@@ -2043,7 +2043,7 @@ const Duet = {
 					parseNode: expNode,
 					type: Type.unknown,
 					update: Update.once,
-					storage: Storage.global,
+					storage: Storage.static,
 					children: expNode.children.map(analyzeExp),
 					code: [VM.call, Duet.platform.opv.index, expNode.children.length]
 				}
@@ -2122,7 +2122,7 @@ const Duet = {
 					parseNode: expNode,
 					type: ref.return,
 					update: ref.update || Update.once,
-					storage: Storage.global,
+					storage: Storage.static,
 					children: args.children.map(analyzeExp),
 					code: [
 						(ref.async? VM.callAsync : VM.call), 
@@ -2135,7 +2135,7 @@ const Duet = {
 					parseNode: expNode,
 					type: [Type.unknown, expNode.children.length],
 					update: Update.once,
-					storage: Storage.global,
+					storage: Storage.static,
 					children: expNode.children.map(analyzeExp),
 					code: [VM.array, expNode.children.length]
 				};
@@ -2152,7 +2152,7 @@ const Duet = {
 					parseNode: expNode,
 					type: Type.unknown,
 					update: Update.once,
-					storage: Storage.global,
+					storage: Storage.static,
 					children: expNode.children.slice(1).map(analyzeExp),
 					code: [VM.call, tkText(op.start), expNode.children.length - 1]
 				}
@@ -2362,7 +2362,7 @@ const Duet = {
 							let valName = id[i];
 							typedAccess.push(valName);
 							let value = entityInfo.variables[valName];
-							// Completely skip the nested access if it's a global type
+							// Completely skip the nested access if it's a static type
 							if(value.storage < Storage.instance && typedAccess.length > 2) {
 								typedAccess = typedAccess.slice(-2);
 							}
