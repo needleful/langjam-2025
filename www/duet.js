@@ -1033,10 +1033,19 @@ const Duet = {
 			if(token.start > c) {
 				span(view, text.substr(c, token.start - c));
 			}
-			token.span = span(view,
-				text.substr(token.start, token.length),
-				'code-'+Duet.TokenNames[token.type]);
 			c = token.start + token.length;
+			let txt = text.substr(token.start, token.length);
+			if(txt.endsWith('\n') && c == text.length) {
+				txt += ' ';
+			}
+			token.span = span(view,
+				txt,
+				'code-'+Duet.TokenNames[token.type]);
+			
+		}
+		// Trailing whitespace
+		if(c < text.length) {
+			span(view, text.substr(c - text.length));
 		}
 		sync_scroll();
 	},
