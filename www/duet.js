@@ -325,7 +325,7 @@ const Duet = {
 				r.length = v.length;
 				let m = Duet.platform.opv.magnitude.s(v);
 				for(let i = 0; i < v.length; i++) {
-					r[i] = v[i]/m;
+					r[i] = m? v[i]/m : 0.0;
 				}
 				return r;
 			})
@@ -752,7 +752,6 @@ const Duet = {
 						Duet.logError(`Error creating ${typename}.${varname}:`, err);
 						Duet.setPaused(true);
 					}
-					console.log(`Creation: ${typename}.${valname}: ${type.values[valname]}`); 
 				}
 				type.count += type.toCreate.plain;
 			}
@@ -765,14 +764,15 @@ const Duet = {
 			}
 			for(let val of type.compute.frame) {
 				let valname = val[0];
+				let newval;
 				try {
-					let value = Duet.eval(typename, val[1]);
-					type.values[valname] = value;
+					newval = Duet.eval(typename, val[1]);
 				}
 				catch(err) {
 					Duet.logError(`Could not update ${typename}.${valname}`);
 					Duet.setPaused(true);
 				}
+
 				if(valname in type.events) {
 					let events = type.events[valname];
 					for(let event of events) {
@@ -788,9 +788,16 @@ const Duet = {
 								Duet.setPaused(true);
 							}
 						}
+						else if(event.storage == Storage.global) {
+							let oldVal = type.values[valname];
+							if(oldVal == newval) {
+								continue;
+							}
+						}
 						messages.push([typename, event.do]);
 					}
 				}
+				type.values[valname] = newval;
 			}
 		}
 		for(let message of messages) {
@@ -2588,13 +2595,19 @@ const Duet = {
 		}
 		for(let eventName in events) {
 			let eventCode = [];
+			if(!(eventName in variables)) {
+				err(`Event Name '${eventName}' does not match any local variables.`, events[eventName][0].parseNode);
+				continue;
+			}
+			let eventStorage = variables[eventName].storage;
+
 			// For now, there's no conditional events
 			for(let i = 0; i < events[eventName].length; i++) {
 				let line = events[eventName][i];
 				checkExp(eventName, line);
 				eventCode = eventCode.concat(line.code);
 			}
-			entity.events[eventName] = [{do: eventCode}];
+			entity.events[eventName] = [{do: eventCode, storage: eventStorage}];
 		}
 	}
 };

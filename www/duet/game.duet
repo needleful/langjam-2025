@@ -10,4 +10,8 @@ program game
 # We create entities with `<entity name>.create`.
 # See the player script for more
 myplayer = player.create
-badguy = enemySquare.create
+
+spawnedSquares = floor(time.frame/20.0)
+
+spawnedSquares
+	enemySquare.create

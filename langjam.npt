@@ -173,6 +173,9 @@ m3
 		p1
 		i17
 		x
+	- Make sure event names actually exist
+		p1
+		i116
 - Game
 	p1
 	i42
