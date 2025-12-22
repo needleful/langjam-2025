@@ -33,6 +33,8 @@ frame = time.frame
 framesPerBullet = 5.0
 firing = 0; input.click.left*(firing + 1)/framesPerBullet
 fire = ceil(firing)
+aim = input.mouse - position
+
 
 # The other oddity of Duet is all other code execution is done through listeners.
 # Here, we're running this code whenever `frame` changes.
@@ -41,11 +43,11 @@ fire = ceil(firing)
 # Maybe for a 2-week jam.
 frame
 	canvas.drawSprite(sprite, position, 
-		opv.angle2(input.mouse - position) + pi/2)
+		opv.angle2(aim) + pi/2)
 	canvas.drawSprite(crosshair, input.mouse)
 
 fire
-	bullet.create
+	bullet.create(direction = opv.normalize(aim))
 
 #firing
 #	canvas.drawtext(tostring(firing), position + [10, 10])

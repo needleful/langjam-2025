@@ -1123,7 +1123,6 @@ const Duet = {
 		// Any leading whitespace (used for a class of things)
 		indentation: 7,
 		comma: 8,
-		semicolon: 9,
 		// One or more newline characters and any lines with only whitespace
 		// exluding the leading indentation
 		newline: 10,
@@ -1137,8 +1136,7 @@ const Duet = {
 		stringText: 15,
 		escapedStringText: 16,
 		// For passing failures to the editor
-		invalid: 17,
-		equal: 18
+		invalid: 17
 	},
 	TokenNames: {},
 	// A list of dictionaries
@@ -1233,8 +1231,6 @@ const Duet = {
 			|| grabString(Duet.Token.parenEnd, ')')
 			|| grabString(Duet.Token.comma, ',')
 			|| grabString(Duet.Token.period, '.')
-			|| grabString(Duet.Token.semicolon, ';')
-			|| grabRegex(Duet.Token.equal, r_equal)
 			|| grabRegex(Duet.Token.comment, r_comment)
 			|| grabRegex(Duet.Token.operator, r_operator)
 			){
@@ -1283,7 +1279,8 @@ const Duet = {
 			'%':4,
 			'<':5, '<=':5, '>=':5, '>':5, '==':5, '!=':5,
 			'!':6, '&':7, '|':8,
-			':':9
+			':':9, ';':9,
+			'=':100,
 		};
 		const unaryOps = [
 			'+', '-', '!'
@@ -1409,28 +1406,6 @@ const Duet = {
 				}
 			}
 			return grow(name);
-		}
-
-		function declaration() {
-			let name = accessor();
-			if(!name) {
-				return false;
-			}
-			let decl = newNode(Duet.ParseNode.declaration);
-			decl.start = name.start;
-
-			if(grabText(Duet.Token.operator, ':')) {
-				let type = valueList(Duet.Token.equal);
-				if(!type) {
-					type = parseError('Expected a type after the colon [:]', name.length, -name.length);
-				}
-				decl.start = name.start;
-				decl.children = [name, type];
-			}
-			else {
-				decl.children = [name];
-			}
-			return grow(decl);
 		}
 
 		function number(op = false) {
@@ -1657,44 +1632,6 @@ const Duet = {
 			return exp && grow(exp);
 		}
 
-		function binding() {
-			let start = tk;
-			let node = newNode(Duet.ParseNode.binding);
-			let d = declaration();
-			if(!d) {
-				tk = start;
-				return false;
-			}
-			if(!grab(Duet.Token.equal)) {
-				tk = start;
-				return false;
-			}
-			let e = expression();
-			if(!e) {
-				e = parseError('Expected an expression for the binding clause');
-			}
-			node.children = [d, e];
-			if(grab(Duet.Token.semicolon)) {
-				let e2 = expression();
-				if(!e2) {
-					e2 = parseError('Expected another expression after the initial binding (prefaced with a semicolon [;])', 1, -1);
-				}
-				node.children.push(e2);
-			}
-			while(grab(Duet.Token.semicolon)) {
-				parseError('Only two expressions are allowed for each binding: an initialization, and an integration');
-				let ex = expression();
-				if(ex) {
-					node.children.push();
-				}
-			}
-			return grow(node);
-		}
-
-		function boolExpression() {
-			return false;
-		}
-
 		function message() {
 			let node = newNode(Duet.ParseNode.funCall);
 			let name = accessor();
@@ -1712,12 +1649,20 @@ const Duet = {
 			return grow(node);
 		}
 
-		function event() {
-			var eventNode = newNode(Duet.ParseNode.event);
-			let condition = expression();
-			if(!condition || condition.length == 0) {
+		function isOp(text, ex) {
+			if(ex.children.length != 3) {
 				return false;
 			}
+			let op = ex.children[0];
+			return op.length == 1 && 
+				op.type == Duet.ParseNode.operator && 
+				tokens[op.start].length == text.length && 
+				tkText(tokens[op.start]) == text;
+		}
+
+		function event(condition) {
+			var eventNode = newNode(Duet.ParseNode.event);
+			eventNode.start = condition.start;
 			eventNode.children.push(condition);
 			if(!grab(Duet.Token.newline)) {
 				parseError('Expected an indented line after the condition', condition.length, -condition.length);
@@ -1749,9 +1694,34 @@ const Duet = {
 			return grow(eventNode);
 		}
 
+		function binding(ex) {
+			if(!isOp('=', ex)) {
+				return null;
+			}
+			let bindNode = newNode(Duet.ParseNode.binding);
+			let decl = ex.children[1];
+			let value = ex.children[2];
+
+			bindNode.start = decl.start;
+			if(isOp(';', value)) {
+				let init = value.children[1];
+				let integrate = value.children[2];
+				bindNode.children = [decl, init, integrate];
+			}
+			else {
+				bindNode.children = [decl, value];
+			}
+			return grow(bindNode);
+		}
+
 		function clause() {
 			skipIgnored();
-			return binding() || event();
+			let s = tk;
+			let ex = expression();
+			if(!ex) {
+				return null;
+			}
+			return binding(ex) || event(ex) || parseError('Expected an event after condition', tk - s + 1, s - tk);
 		}
 
 		let script = newNode(Duet.ParseNode.script);
@@ -2310,7 +2280,7 @@ const Duet = {
 		for(let i = 1; i < tree.children.length; i++) {
 			let node = tree.children[i];
 			if(node.type == Duet.ParseNode.binding) {
-				let declaration = node.children[0];
+				let declaration = node;
 				let ident = declaration.children[0];
 				if(ident.type != Duet.ParseNode.accessor || ident.children.length || ident.length > 1) {
 					err('Advanced bindings not implemented yet', node);
@@ -2322,13 +2292,6 @@ const Duet = {
 					err(`Duplicate variable declaration: ${name}`, ident); 
 				}
 				let value1 = analyzeExp(node.children[1]);
-				if(declaration.children.length > 1) {
-					let declaredType = analyzeType(declaration.children[1]); 
-					if(Duet.unify(value1.type, declaredType)) {
-						err(`Conflicting types in ${type}.${name}. Declared as ${Duet.readableType(declaredType)}, but it was inferred as ${Duet.readableType(value1.type)}`);
-					}
-					value1.type = declaredType;
-				}
 				value1.order = i;
 				value1.parseNode = node.children[0];
 				// An initialization and an integration
