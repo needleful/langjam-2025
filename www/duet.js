@@ -36,29 +36,29 @@ const Update = {
 let UpdateNames = {};
 
 const Storage = {
-	static: 0,
-	instance: 1,
+	shared: 0,
+	unique: 1,
 };
 
 let StorageNames = {};
 
 const VM = {
 	constant: 0,
-	localInstance: 1,
+	localUnique: 1,
 	call: 2,
 	callAsync: 3,
 	array: 4,
 	read: 5,
 	nonlocal: 6,
-	localStatic: 7, 
+	localShared: 7, 
 };
 
 let VMNames = {};
 
 const VMLength = {
 	[[VM.constant]]: 2,
-	[[VM.localInstance]]: 2,
-	[[VM.localStatic]]: 2,
+	[[VM.localUnique]]: 2,
+	[[VM.localShared]]: 2,
 	[[VM.nonlocal]]: 2,
 	[[VM.call]]: 3,
 	[[VM.callAsync]]: 3,
@@ -609,11 +609,11 @@ const Duet = {
 			stack.push(arg(1));
 			break;
 		}
-		case VM.localStatic: {
+		case VM.localShared: {
 			stack.push(Duet.entities[typename].values[arg(1)]);
 			break;
 		} 
-		case VM.localInstance: {
+		case VM.localUnique: {
 			let val = Duet.entities[typename].values[arg(1)];
 			// We're indexing a subset of values
 			if(indexed) {
@@ -830,7 +830,7 @@ const Duet = {
 				if(valname in type.events) {
 					let event = type.events[valname];
 					// Check if global value changed
-					if(event.storage == Storage.static) {
+					if(event.storage == Storage.shared) {
 						let oldVal = type.values[valname];
 						if(oldVal == newval) {
 							addMessage = false;
@@ -1041,7 +1041,6 @@ const Duet = {
 			token.span = span(view,
 				txt,
 				'code-'+Duet.TokenNames[token.type]);
-			
 		}
 		// Trailing whitespace
 		if(c < text.length) {
@@ -1928,7 +1927,7 @@ const Duet = {
 				parseNode:node,
 				type: type,
 				update: Update.once,
-				storage: Storage.static,
+				storage: Storage.shared,
 				code: code,
 				children: children,
 				dependencies: dependencies
@@ -2040,7 +2039,7 @@ const Duet = {
 						return defaultCode(
 							acNode,
 							Type.unknown,
-							[ VM.localInstance, ac.text[0] ],
+							[ VM.localUnique, ac.text[0] ],
 							[],
 							[ac.text[0]]
 						);
@@ -2120,7 +2119,7 @@ const Duet = {
 					parseNode: expNode,
 					type: Type.unknown,
 					update: Update.once,
-					storage: Storage.static,
+					storage: Storage.shared,
 					children: expNode.children.map(analyzeExp),
 					code: [VM.call, Duet.platform.opv.index, expNode.children.length]
 				}
@@ -2199,7 +2198,7 @@ const Duet = {
 					parseNode: expNode,
 					type: ref.return,
 					update: ref.update || Update.once,
-					storage: Storage.static,
+					storage: Storage.shared,
 					children: args.children.map(analyzeExp),
 					code: [
 						(ref.async? VM.callAsync : VM.call), 
@@ -2212,7 +2211,7 @@ const Duet = {
 					parseNode: expNode,
 					type: [Type.unknown, expNode.children.length],
 					update: Update.once,
-					storage: Storage.static,
+					storage: Storage.shared,
 					children: expNode.children.map(analyzeExp),
 					code: [VM.array, expNode.children.length]
 				};
@@ -2229,7 +2228,7 @@ const Duet = {
 					parseNode: expNode,
 					type: Type.unknown,
 					update: Update.once,
-					storage: Storage.static,
+					storage: Storage.shared,
 					children: expNode.children.slice(1).map(analyzeExp),
 					code: [VM.call, tkText(op.start), expNode.children.length - 1]
 				}
@@ -2310,7 +2309,7 @@ const Duet = {
 				else if(node.children.length == 3) {
 					variables[name] = value1;
 					let v = variables[name];
-					v.storage = Storage.instance;
+					v.storage = Storage.unique;
 					v.integrate = analyzeExp(node.children[2]);
 				}
 				else{
@@ -2407,7 +2406,7 @@ const Duet = {
 				if(known(node.type)) {
 					node.code = node.code.flat(Infinity);
 				}
-				else if(node.code[0] == VM.localInstance) {
+				else if(node.code[0] == VM.localUnique) {
 					let locName = node.code[1];
 					if(locName in variables && variables[locName].type != Type.unknown) {
 						let l = variables[locName];
@@ -2418,8 +2417,8 @@ const Duet = {
 					else {
 						err(`COMPILER BUG: could not determine type of variable: '${locName}'`, node.parseNode);
 					}
-					if(node.storage == Storage.static) {
-						node.code[0] = VM.localStatic;
+					if(node.storage == Storage.shared) {
+						node.code[0] = VM.localShared;
 					}
 				}
 				else if(node.code[0] == VM.nonlocal) {
@@ -2443,7 +2442,7 @@ const Duet = {
 							typedAccess.push(valName);
 							let value = entityInfo.variables[valName];
 							// Completely skip the nested access if it's a static type
-							if(value.storage < Storage.instance && typedAccess.length > 2) {
+							if(value.storage < Storage.unique && typedAccess.length > 2) {
 								typedAccess = typedAccess.slice(-2);
 							}
 							node.update = Math.max(node.update, value.update);
@@ -2472,7 +2471,7 @@ const Duet = {
 				}
 				return node;
 			}
-			// Either VM.call, VM.asyncCall, VM.array, or VM.localInstance
+			// Either VM.call, VM.asyncCall, VM.array, or VM.localUnique
 			let instr = node.code;
 			let code = [];
 
@@ -2522,7 +2521,7 @@ const Duet = {
 					if(!Duet.unify(expType, c.type)) {
 						err(`Function ${funcName}: Expected argument ${i} to be of type ${Duet.readableType(expType)}. Received ${Duet.readableType(c.type)}`, node.parseNode);
 					}
-					subType += (c.storage == Storage.instance) ? 'v' : 's';
+					subType += (c.storage == Storage.unique) ? 'v' : 's';
 					code = code.concat(c.code);
 				}
 				if(!(subType in funcRef)) {
@@ -2592,7 +2591,7 @@ const Duet = {
 					// For now: self-dependent variables 
 					// are always updated each frame and per-instance
 					varNode.update = Update.frame;
-					varNode.storage = Storage.instance;
+					varNode.storage = Storage.unique;
 					continue;
 				};
 				// We don't need to figure out dependencies' types 
@@ -2654,9 +2653,9 @@ const Duet = {
 			}
 			//console.log(varname, 'typeInfo:', result);
 			// Apply all the computation things after resolving types and overloads
-			entity.values[varname] = varNode.storage == Storage.instance? [] : null;
+			entity.values[varname] = varNode.storage == Storage.unique? [] : null;
 			if(varNode.update == Update.once) {
-				if(varNode.storage == Storage.instance){
+				if(varNode.storage == Storage.unique){
 					entity.compute.creation.push([varname, varNode.code]);
 				} 
 				else {

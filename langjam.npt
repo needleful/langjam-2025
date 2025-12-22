@@ -67,12 +67,18 @@ m3
 			/zeroes = array.of(6, 0)
 			/one_to_ten = array.between(1, 10)
 			/array.reverse(values)
+		- Skip reference creation if we aren't assigning to a value
+			p1
+			i123
 	- Free entities
 		p1
 		i58
 		- Destroy objects
 			p1
 			i59
+		- Destroying a local entity that's referenced should be an error
+			p1
+			i124
 	- Receive messages
 		p1
 		i36
@@ -112,6 +118,7 @@ m3
 		- Player fire rate
 			p1
 			i65
+			x
 	- Listen to values from the platform
 		p1
 		i30
@@ -135,16 +142,17 @@ m3
 	- Typecheck dependencies in-order across different entities
 		p1
 		i98
-	- Correct type-checking for typename.instance_field
+	- Correct type-checking for typename.instance_field versus entity.instance_field
 		p1
 		i99
-		/It returns an array
+		/Accessing the type returns the entire array of values.
 	- Specify variables that can be initialized to different values
 		p1
 		i120
 	- Events for instance variables that are changing
 		p1
 		i121
+		x
 	- Trailing newline required for comments at the end of code
 		p1
 		i122
