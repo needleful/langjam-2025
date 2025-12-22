@@ -1,0 +1,11 @@
+entity enemySquare
+
+sprite = file.loadsprite('assets/square.png')
+speed = 5.0
+movement = opv.normalize(game.myplayer.position - position)
+position = [0,0]; position + movement*speed
+frame = time.frame
+badguy = enemysquare.create
+
+frame
+	canvas.drawSprite(sprite, position)

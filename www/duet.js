@@ -313,13 +313,22 @@ const Duet = {
 			floor: unGen([Type.real], (list) => list.map(Math.floor)),
 			ceil: unGen([Type.real], (list) => list.map(Math.ceil)),
 			index: binGen([Type.real], (a, b) => a[b], Type.real, Type.real),
-			normalize:unGen([Type.real], (v) => {
+			magnitude:unGen([Type.real], (v) => {
 				let r = 0;
 				for(let val of v) {
 					r += val*val;
 				}
 				return Math.sqrt(r);
-			}, Type.real)
+			}, Type.real),
+			normalize: unGen([Type.real], (v) => {
+				let r = [];
+				r.length = v.length;
+				let m = Duet.platform.opv.magnitude.s(v);
+				for(let i = 0; i < v.length; i++) {
+					r[i] = v[i]/m;
+				}
+				return r;
+			})
 		},
 		canvas: {
 			clearcolor: {
@@ -427,6 +436,11 @@ const Duet = {
 			},
 		},
 		input: {
+			pause: {
+				type: Type.real,
+				update: Update.frame,
+				value: 0
+			},
 			right: {
 				type: Type.real,
 				update: Update.frame,
@@ -533,6 +547,10 @@ const Duet = {
 		case "ArrowRight":
 			Duet.platform.input.right.value = val;
 			break;
+		case "Escape":
+			if(val) Duet.setPaused(!Duet.getPaused());
+			Duet.platform.input.pause.value = val;
+			break;
 		}
 	},
 	release: (e) => {
@@ -542,7 +560,7 @@ const Duet = {
 	instr: (typename, stack, code, pointer) => {
 		let instr = code[pointer];
 		if(!(instr in VMLength)) {
-			Duet.logError('Not an instruction:', instr, code, pointer);
+			Duet.logError('Not an implemented instruction:', VMNames[instr], instr, code, pointer);
 			return false;
 		}
 		function arg(i) {
@@ -556,6 +574,23 @@ const Duet = {
 		}
 		case VM.local: {
 			stack.push(Duet.entities[typename].values[arg(1)]);
+			break;
+		}
+		case VM.nonlocal:{
+			let keys = arg(1);
+			let value = undefined;
+			for(let i = 0; i < keys.length - 1; i += 2) {
+				let ent = keys[i];
+				let varname = keys[i+1];
+				let v = Duet.entities[ent].values[varname];
+				if(value !== undefined) {
+					value = v[value];
+				}
+				else {
+					value = v;
+				}
+			}
+			stack.push(value);
 			break;
 		}
 		// A refernce to a platform variable
@@ -595,7 +630,7 @@ const Duet = {
 			break;
 		}
 		default:
-			Duet.logError('Not an instruction: ', instr);
+			Duet.logError(`Not an implemented instruction: ${VMNames[instr]}(code ${instr})`);
 			return false;
 		}
 		return true;
@@ -619,7 +654,14 @@ const Duet = {
 			}
 			catch(err) {
 				let c = Duet.readableCode(code);
-				Duet.logError('Error at instruction: ', pointer, ' in code: \n| ', c.join('\n| '), '\n\nStack:\n| ', JSON.stringify(stack));
+				let str = '';
+				for(let i = 0; i < c.length; i++) {
+					str += `\n${String(i).padStart(' ', 5)} | ${c[i]}`;
+					if(i == pointer) {
+						str += '\n        ^^^^^^^^^^^^^^^^^^^^^^';
+					}
+				}
+				Duet.logError(`Error at instruction: pointer\n`, err, str, '\n\nStack:\n| ', JSON.stringify(stack));
 				throw err;
 			}
 		}
@@ -718,6 +760,9 @@ const Duet = {
 			type.toCreate.plain = 0;
 
 			// Running in the frame
+			if(!type.count) {
+				continue;
+			}
 			for(let val of type.compute.frame) {
 				let valname = val[0];
 				try {
@@ -725,7 +770,7 @@ const Duet = {
 					type.values[valname] = value;
 				}
 				catch(err) {
-					Duet.logError(`Error updating ${typename}.${varname}:`, err);
+					Duet.logError(`Could not update ${typename}.${valname}`);
 					Duet.setPaused(true);
 				}
 				if(valname in type.events) {
@@ -768,6 +813,9 @@ const Duet = {
 		}
 	},
 	setPaused: (p) => {
+		if(p == Duet.platform.paused.value) {
+			return;
+		}
 		Duet.platform.paused.value = p;
 		if(!p) {
 			Duet.frame();
@@ -920,7 +968,8 @@ const Duet = {
 	logError:(text, ...info) => {
 		let list = document.getElementById('errors-list');
 		let li = makeChild(list, 'li');
-		li.innerText = text + info.join(' ');
+		let code = makeChild(li, 'code');
+		code.innerText = text + info.join(' ');
 		console.error(text, ...info);
 	},
 	logParseErrors:(file, errors) => {
@@ -933,7 +982,7 @@ const Duet = {
 					endTk = start;
 				}
 				let end = endTk.start + endTk.length;
-				problemText = `Text: "${file.text.substr(start, end-start)}"`.replace('\t', '⇥').replace('\r', '↳');
+				problemText = `Text: "${file.text.substr(start, end-start)}"`.replaceAll('\t', '⇥').replaceAll('\n', '↳');
 			}
 			else {
 				problemText = `From tokens ${err.start} to ${err.start + err.length}`;
@@ -1233,6 +1282,9 @@ const Duet = {
 
 		function header() {
 			let h = newNode(Duet.ParseNode.header);
+			if(!h) {
+				return parseError(`Script should start with a header type ('program' or 'script'). Found [${Duet.TokenNames[peek()]}]`);
+			}
 			let type = grab(Duet.Token.ident);
 			if(!type) {
 				return parseError('The script should start with a type and name');
@@ -1456,7 +1508,7 @@ const Duet = {
 				let opNode;
 
 				let opText = tkText(firstOp);
-				if(unaryOps.indexOf(opText) < 0) {
+				if(!unaryOps.includes(opText)) {
 					opNode = parseError(`Invalid starting operator: [${opText}]`, 1, -1);
 				}
 				else {
@@ -1518,7 +1570,8 @@ const Duet = {
 					break;
 				}
 			}
-			return grow(exp);
+
+			return exp && grow(exp);
 		}
 
 		function binding() {
@@ -2128,17 +2181,20 @@ const Duet = {
 
 		let header = tree.children[0];
 		if(header.type != Duet.ParseNode.header) {
-			err('Expected the program to start with a header, got ${Duet.ParseNodeNames}', header);
+			err(`Expected the program to start with a header, got ${Duet.ParseNodeNames[header.type]}`, header);
+			entity.type = [Type.unknown, 'invalid'];
 		}
-		let type = tkText(header.start);
-		let name = tkText(header.start + 1);
-		if(!(type in Type) || (type != 'program' && type != 'entity')) {
-			err(`Expected the script type to be [program] or [entity], found ${type}`, {start: header.start, length: 1});
+		else {
+			let type = tkText(header.start);
+			let name = tkText(header.start + 1);
+			if(!(type in Type) || (type != 'program' && type != 'entity')) {
+				err(`Expected the script type to be [program] or [entity], found ${type}`, {start: header.start, length: 1});
+			}
+			if(name in Duet.entities) {
+				err(`Entity class ${name} already exists`, header.start+1, 1);
+			}
+			entity.type = [Type[type], name];
 		}
-		if(name in Duet.entities) {
-			err(`Entity class ${name} already exists`, header.start+1, 1);
-		}
-		entity.type = [Type[type], name];
 		for(let i = 1; i < tree.children.length; i++) {
 			let node = tree.children[i];
 			if(node.type == Duet.ParseNode.binding) {
@@ -2149,7 +2205,7 @@ const Duet = {
 					continue;
 				}
 				let name = tkText(ident.start);
-				console.log('Binding: of ',name, Duet.printableTree(file, node));
+				//console.log('Binding: of ',name, Duet.printableTree(file, node));
 				if(name in variables) {
 					err(`Duplicate variable declaration: ${name}`, ident); 
 				}
@@ -2178,7 +2234,7 @@ const Duet = {
 				}
 			}
 			else if(node.type == Duet.ParseNode.event) {
-				console.log("Event:", Duet.printableTree(file, node));
+				//console.log("Event:", Duet.printableTree(file, node));
 				let cond = node.children[0];
 				if(cond.type != Duet.ParseNode.accessor || cond.children.length > 1) {
 					err(`Advanced conditions not implemented yet`, cond);
@@ -2269,8 +2325,8 @@ const Duet = {
 				}
 				else if(node.code[0] == VM.local) {
 					let locName = node.code[1];
-					if(locName in checked) {
-						let l = checked[locName]
+					if(locName in variables && variables[locName].type != Type.unknown) {
+						let l = variables[locName];
 						node.type = l.type;
 						node.storage = Math.max(node.storage, l.storage);
 						node.update = Math.max(node.update, l.update);
@@ -2282,16 +2338,29 @@ const Duet = {
 				else if(node.code[0] == VM.nonlocal) {
 					let id = node.code[1];
 					let typename = id[0];
+					// TypedAccess has a little more info
+					// instead of, e.g. world.theplayer.position
+					// it would be [world, theplayer, player, position]
+					// encoding the sub-entity's type as well
+					let typedAccess = [typename];
 					if(typename in analysis.entities) {
 						let entityInfo = analysis[analysis.entities[typename]];
 						let realType = Type.unknown;
+						let rootValue = entityInfo.variables[id[1]];
+						// This is based on the storage of the root value.
+						// Note that the 'update' is from the leaf value.
+						node.storage = Math.max(node.storage, rootValue.storage);
 
 						for(let i = 1; i < id.length; i++) {
 							let valName = id[i];
+							typedAccess.push(valName);
 							let value = entityInfo.variables[valName];
-							realType = value.type;
-							node.storage = Math.max(node.storage, value.storage);
+							// Completely skip the nested access if it's a global type
+							if(value.storage < Storage.instance && typedAccess.length > 2) {
+								typedAccess = typedAccess.slice(-2);
+							}
 							node.update = Math.max(node.update, value.update);
+							realType = value.type;
 							if(!Array.isArray(value.type) || value.type[0] != Type.entity) {
 								if(i < id.length - 1) {
 									err(`COMPILER BUG: I don't know what '${valName}' means here.`, node.parseNode);
@@ -2300,12 +2369,14 @@ const Duet = {
 							}
 							let newType = value.type[1];
 							if(newType in analysis.entities) {
+								typedAccess.push(newType);
 								entityInfo = analysis[analysis.entities[newType]];
 							}
 							else {
 								err(`COMPILER BUG: Accessor '${valName}' is of an unknown entity type: '${newType}'`, node.parseNode);
 							}
 						}
+						node.code[1] = typedAccess;
 						node.type = realType;
 					}
 					else {
@@ -2362,7 +2433,7 @@ const Duet = {
 					let c = node.children[i];
 					let expType = funcRef.args[i];
 					if(!Duet.unify(expType, c.type)) {
-						err(`Function ${funcName}: Expected argument ${i} to be of type ${Duet.readableType(expType)}. Received ${Duet.readableType(c.type)}`, c.parseNode);
+						err(`Function ${funcName}: Expected argument ${i} to be of type ${Duet.readableType(expType)}. Received ${Duet.readableType(c.type)}`, node.parseNode);
 					}
 					subType += (c.storage == Storage.instance) ? 'v' : 's';
 					code = code.concat(c.code);
@@ -2425,7 +2496,7 @@ const Duet = {
 				varname = varname.substr(0, varname.indexOf('#'));
 			}
 			let varNode = variables[varname];
-			if(varname in checked || visited.indexOf(varname) >= 0) {
+			if(varname in checked || visited.includes(varname)) {
 				return varNode;
 			}
 			for(let i = 0; i < dependencies[varname].length; i++) {
@@ -2437,8 +2508,12 @@ const Duet = {
 					varNode.storage = Storage.instance;
 					continue;
 				};
-				visited.push(dep);
-				checkVar(dep, visited);
+				// We don't need to figure out dependencies' types 
+				//  if we know this value's type
+				if(varNode.type == Type.unknown) {
+					visited.push(dep);
+					checkVar(dep, visited);
+				}
 			}
 			checked[varname] = checkExp(varname, varNode);
 			if('integrate' in varNode) {

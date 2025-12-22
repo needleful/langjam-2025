@@ -76,7 +76,6 @@ m3
 	- Receive messages
 		p1
 		i36
-		/
 		- Score
 			p1
 			i56
@@ -106,7 +105,7 @@ m3
 		- Spawn enemies over time
 			p1
 			i63
-		- Add trails 
+		- Add trails
 			p1
 			i64
 		- Player fire rate
@@ -132,12 +131,19 @@ m3
 	- Non-local functions
 		p1
 		i39
+	- Typecheck dependencies in-order across different entities
+		p1
+		i98
+	- Have appropriate errors when accessing an instance variable from a typename
+		p1
+		i99
 - Editor
 	p1
 	i10
 	- Switching to and from files messes up the parser classes
 		p1
 		i11
+		/Windows only?
 	- Add tooltips to loaded images so they're easy to reference
 		p1
 		i41
@@ -148,6 +154,9 @@ m3
 	- Make sure it looks good on other browsers
 		p1
 		i48
+	- Player.duet isn't parsed properly unless it's the focused file
+		p1
+		i97
 - Bugs
 	p1
 	i14
