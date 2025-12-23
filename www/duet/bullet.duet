@@ -8,7 +8,7 @@ direction = unique([1, 0])
 position = canvas.size/2; position+direction*speed
 
 framesAlive = unique(0); framesAlive + 1
-expire = framesAlive > 200 | opv.any(position < [0,0] | position > canvas.size)
+expire = framesAlive > 200 | opv.any(position < -canvas.size/2 | position > 1.5*canvas.size)
 
 frame = time.frame
 
