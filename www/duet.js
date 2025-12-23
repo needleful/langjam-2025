@@ -596,7 +596,35 @@ const Duet = {
 	entities: {},
 	messages: [],
 	press: (e) => {
-		Duet._keySet(e.key, 1);
+		Duet._keySet(e.code, 1);
+	},
+	release: (e) => {
+		Duet._keySet(e.code, 0);
+	},
+	_keySet: (code, val) => {
+		switch(code) {
+		case 'ArrowUp':
+		case 'KeyW':
+			Duet.platform.input.up.value = val;
+			break;
+		case 'ArrowDown':
+		case 'KeyS':
+			Duet.platform.input.down.value = val;
+			break;
+		case 'ArrowLeft':
+		case 'KeyA':
+			Duet.platform.input.left.value = val;
+			break;
+		case 'ArrowRight':
+		case 'KeyD':
+			Duet.platform.input.right.value = val;
+			break;
+		case 'Escape':
+		case 'KeyP':
+			if(val) Duet.setPaused(!Duet.getPaused());
+			Duet.platform.input.pause.value = val;
+			break;
+		}
 	},
 	checkMouse: (event) => {
 		let m = Duet.platform.input.click;
@@ -612,29 +640,6 @@ const Duet = {
 		let r = Duet.canvas.getBoundingClientRect();
 		Duet.platform.input.mouse.value = [event.clientX - r.x, event.clientY - r.y];
 		Duet.checkMouse(event);
-	}, 
-	_keySet: (key, val) => {
-		switch(key) {
-		case "ArrowUp":
-			Duet.platform.input.up.value = val;
-			break;
-		case "ArrowDown":
-			Duet.platform.input.down.value = val;
-			break;
-		case "ArrowLeft":
-			Duet.platform.input.left.value = val;
-			break;
-		case "ArrowRight":
-			Duet.platform.input.right.value = val;
-			break;
-		case "Escape":
-			if(val) Duet.setPaused(!Duet.getPaused());
-			Duet.platform.input.pause.value = val;
-			break;
-		}
-	},
-	release: (e) => {
-		Duet._keySet(e.key, 0);
 	},
 
 	instr: (typename, stack, code, pointer, indexed) => {
