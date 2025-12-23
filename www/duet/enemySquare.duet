@@ -6,7 +6,7 @@ movement = opv.normalize(game.myplayer.position - position)
 position = unique([0,0]); position + movement*speed
 frame = time.frame
 framesAlive = unique(0); framesAlive + 1
-expire = floor(framesAlive/600)
+expire = framesAlive > 600
 
 frame
 	canvas.drawSprite(sprite, position)

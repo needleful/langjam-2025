@@ -101,7 +101,13 @@ const opCore = {
 	},
 	greaterOrEqual: (a, b) => {
 		return 1.0*(a >= b)
-	}
+	},
+	logicalAnd: (a,b) => {
+		return Math.abs(Math.sign(a && b));
+	},
+	logicalOr: (a,b) => {
+		return Math.abs(Math.sign(a || b));
+	},
 }
 
 function opVV(op) {
@@ -236,6 +242,8 @@ const Duet = {
 		'>': 'greater',
 		'<=': 'lessOrEqual',
 		'>=': 'greaterOrEqual',
+		'|': 'logicalOr',
+		'&': 'logicalAnd',
 	},
 	// Our "standard library"
 	platform: {
@@ -405,6 +413,9 @@ const Duet = {
 				greater:binGen(Type.real, opCore.greater),
 				lessOrEqual:binGen(Type.real, opCore.lessOrEqual),
 				greaterOrEqual:binGen(Type.real, opCore.greaterOrEqual),
+
+				logicalOr:binGen(Type.real, opCore.logicalOr),
+				logicalAnd:binGen(Type.real, opCore.logicalAnd),
 			},
 			toV: {
 				add:binGen(Type.real, opSV(opCore.add), [Type.real], [Type.real]),
@@ -416,6 +427,9 @@ const Duet = {
 				greater:binGen(Type.real, opSV(opCore.greater), [Type.real], [Type.real]),
 				lessOrEqual:binGen(Type.real, opSV(opCore.lessOrEqual), [Type.real], [Type.real]),
 				greaterOrEqual:binGen(Type.real, opSV(opCore.greaterOrEqual), [Type.real], [Type.real]),
+
+				logicalOr:binGen(Type.real, opSV(opCore.logicalOr), [Type.real], [Type.real]),
+				logicalAnd:binGen(Type.real, opSV(opCore.logicalAnd), [Type.real], [Type.real]),
 			},
 			clamp: {
 				type: Type.function,
@@ -431,11 +445,27 @@ const Duet = {
 			tostring: unGen(Type.real, String, Type.string)
 		},
 		opv: {
-			arctan2:unGen([Type.real, 2], (p) => Math.atan(p[1]/p[0]), Type.real),
 			angle2:unGen([Type.real, 2],
 				(p) => Math.atan(p[1]/p[0]) + Math.PI*(p[0] < 0),
 				Type.real
 			),
+			any:unGen([Type.real], (p) => {
+				for(let i = 0; i < p.length; i++) {
+					if(p[i]) {
+						return 1;
+					}
+				}
+				return 0;
+			}, Type.real),
+			all:unGen([Type.real], (p) => {
+				for(let i = 0; i < p.length; i++) {
+					if(!p[i]) {
+						return 0;
+					}
+				}
+				return 1;
+			}, Type.real),
+			arctan2:unGen([Type.real, 2], (p) => Math.atan(p[1]/p[0]), Type.real),
 			toV: {
 				add:binGen([Type.real], opVV(opCore.add)),
 				subtract:binGen([Type.real], opVV(opCore.sub)),
@@ -446,6 +476,9 @@ const Duet = {
 				greater:binGen([Type.real], opVV(opCore.greater)),
 				lessOrEqual:binGen([Type.real], opVV(opCore.lessOrEqual)),
 				greaterOrEqual:binGen([Type.real], opVV(opCore.greaterOrEqual)),
+
+				logicalOr:binGen([Type.real], opVV(opCore.logicalOr)),
+				logicalAnd:binGen([Type.real], opVV(opCore.logicalAnd)),
 			},
 			toS: {
 				add:binGen([Type.real], opVS(opCore.add), Type.real),
@@ -457,6 +490,9 @@ const Duet = {
 				greater:binGen([Type.real], opVS(opCore.greater), Type.real),
 				lessOrEqual:binGen([Type.real], opVS(opCore.lessOrEqual), Type.real),
 				greaterOrEqual:binGen([Type.real], opVS(opCore.greaterOrEqual), Type.real),
+
+				logicalOr:binGen([Type.real], opVS(opCore.logicalOr), Type.real),
+				logicalAnd:binGen([Type.real], opVS(opCore.logicalAnd), Type.real),
 			},
 			clamp: {
 				type: Type.function,
@@ -2681,6 +2717,12 @@ const Duet = {
 				else {
 					funcName = funcRef;
 				}
+				
+				if(!funcRef) {
+					err(`Unknown function: ${funcName}`, node.parseNode);
+					return node;
+				}
+
 				// Scalar/vector function
 				let subType = '';
 				for(let i = 0; i < node.children.length; i++) {
@@ -2692,9 +2734,11 @@ const Duet = {
 					subType += (c.storage == Storage.unique) ? 'v' : 's';
 					code = code.concat(c.code);
 				}
+
 				if(!(subType in funcRef)) {
 					err(`COMPILER BUG: Could not overload function [${funcName}] for type: [${subType}]`, node.parseNode);
-				} 
+				}
+
 				let realFunc = funcRef[subType];
 				node.code[1] = realFunc;
 				node.type = funcRef.return;
