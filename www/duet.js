@@ -856,13 +856,15 @@ const Duet = {
 			}
 			type.count -= type.toDelete;
 			function createVars(inc, specialInit = null) {
+				let newcount = type.count + inc;
+
 				function initialize(varname, init) {
 					if(init === undefined) {
 						Duet.logError(`Initializing ${typename}.${varname} to undefined`);
 						Duet.setPaused(true);
 					}
 					let start = type.count;
-					type.values[varname].length += inc;
+					type.values[varname].length = newcount;
 					for(let i = start; i < start + inc; i++) {
 						let val = init;
 						if(Array.isArray(init) && !specialInit) {
@@ -890,7 +892,7 @@ const Duet = {
 					}
 				}
 
-				type.count += inc;
+				type.count = newcount;
 			}
 			if(type.toCreate.special.length) {
 				for(let init of type.toCreate.special) {
