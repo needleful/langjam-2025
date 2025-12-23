@@ -50,7 +50,8 @@ const VM = {
 	array: 4,
 	read: 5,
 	nonlocal: 6,
-	localShared: 7, 
+	localShared: 7,
+	delete: 8,
 };
 
 let VMNames = {};
@@ -64,6 +65,7 @@ const VMLength = {
 	[[VM.callAsync]]: 3,
 	[[VM.array]]: 2,
 	[[VM.read]]: 2,
+	[[VM.delete]]: 1,
 };
 
 const opCore = {
@@ -237,11 +239,158 @@ const Duet = {
 	},
 	// Our "standard library"
 	platform: {
+		canvas: {
+			clearcolor: {
+				type: [Type.real, 3],
+				update: Update.once,
+				value: [1,1,1]
+			},
+			size: {
+				type: [Type.real, 2],
+				update: Update.once,
+				get:() => {
+					let c = Duet.canvas;
+					return [c.width, c.height];
+				}
+			},
+			drawsprite: {
+				type: Type.function,
+				args: ['image', [Type.real, 2], Type.real],
+				requiredArgs: 2,
+				return: Type.void,
+				sv: (image, positions, angles = [0]) => {
+					//console.log('Drawing:', image, pos, [image.width, image.height]);
+					let cw = image.width/2;
+					let ch = image.height/2;
+
+					for(let i = 0; i < positions.length; i++) {
+						let pos = positions[i];
+						let angle = angles[i % angles.length];
+						Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
+						Duet.draw2d.rotate(angle);
+						Duet.draw2d.drawImage(image, -cw, -ch);
+					}
+				},
+				ss: (image, pos, angle = 0) => {
+					let cw = image.width/2;
+					let ch = image.height/2;
+					Duet.draw2d.setTransform(1, 0, 0, 1, pos[0] - cw, pos[1] - ch);
+					Duet.draw2d.rotate(angle);
+					Duet.draw2d.drawImage(image, -cw, -ch);
+				},
+				sss: (i, p, a) =>
+					Duet.platform.canvas.drawsprite.ss(i, p, a),
+				ssv: (i, p, as) =>
+					as.map(a => Duet.platform.canvas.drawsprite.sss(i, p, a)),
+				svs: (i, ps, a) =>
+					Duet.platform.canvas.drawsprite.sv(i, ps, [a]),
+				svv: (i, ps, as) =>
+					Duet.platform.canvas.drawsprite.sv(i, ps, as)
+			},
+			drawtext: {
+				type: Type.function,
+				args: [Type.string, [Type.real, 2], Type.real],
+				requiredArgs: 2,
+				return: Type.void,
+				vv: (text, positions, angles = [0]) => {
+					for(let i = 0; i < positions.length; i++) {
+						let pos = positions[i];
+						let angle = angles[i % angles.length];
+						Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
+						Duet.draw2d.rotate(angle);
+						Duet.draw2d.fillText(text[i],0,0);
+					}
+				},
+				sv: (text, positions, angles = [0]) => {
+					for(let i = 0; i < positions.length; i++) {
+						let pos = positions[i];
+						let angle = angles[i % angles.length];
+						Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
+						Duet.draw2d.rotate(angle);
+						Duet.draw2d.fillText(text,0,0);
+					}
+				},
+				ss: (text, pos, angle = 0) => {
+					Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
+					Duet.draw2d.rotate(angle);
+					Duet.draw2d.fillText(text,0,0);
+				},
+				svv:(t,p,a) => Duet.platform.canvas.drawtext.vv(t,p,a),
+				svv:(t,p,a) => Duet.platform.canvas.drawtext.sv(t,p,a),
+				sss:(t,p,a) => Duet.platform.canvas.drawtext.ss(t,p,a),
+			},
+		},
+		file: {
+			sprites: {},
+			loadsprite: {
+				type: Type.function,
+				async: true,
+				update: Update.once,
+				args: [Type.string],
+				return: 'image',
+				s: (path) => {
+					if(path in Duet.platform.file.sprites) {
+						return Duet.platform.file.sprites[path];
+					} 
+					let result = new Promise((resolve, reject) => {
+						const img = new Image();
+						img.crossOrigin = 'anonymous';
+						img.onload = () => {
+							console.log('Image Loaded:', path);
+							document.getElementById('loaded-images').appendChild(img);
+							Duet.platform.file.sprites[path] = img;
+							img.alt = `Loaded sprite: ${path}`;
+							img.title = `Loaded sprite: ${path}`;
+							resolve(img);
+						}
+						img.onerror = () => {
+							Duet.logError('Failed to load image: ', path);
+							delete Duet.platform.file.sprites[path];
+							reject();
+						}
+						img.src = path;
+					});
+					Duet.platform.file.sprites[path] = result;
+					return result;
+				}
+			},
+		},
 		image: {type: Type.type},
-		pi: {
-			type: Type.real,
-			update: Update.once,
-			get:() => Math.PI
+		input: {
+			pause: {
+				type: Type.real,
+				update: Update.frame,
+				value: 0
+			},
+			right: {
+				type: Type.real,
+				update: Update.frame,
+				value: 0
+			},
+			left: {
+				type: Type.real,
+				update: Update.frame,
+				value: 0
+			},
+			up: {
+				type: Type.real,
+				update: Update.frame,
+				value: 0
+			},
+			down: {
+				type: Type.real,
+				update: Update.frame,
+				value: 0
+			},
+			mouse: {
+				type: [Type.real, 2],
+				update: Update.frame,
+				value: [0,0]
+			},
+			click: {
+				left: {type: Type.real, update: Update.frame, value: 0},
+				right: {type: Type.real, update: Update.frame, value: 0}
+			}
 		},
 		ops: {
 			sign: unGen(Type.real, Math.sign),
@@ -339,91 +488,15 @@ const Duet = {
 			}),
 			tostring: unGen([Type.real], String, Type.string)
 		},
-		canvas: {
-			clearcolor: {
-				type: [Type.real, 3],
-				update: Update.once,
-				value: [1,1,1]
-			},
-			size: {
-				type: [Type.real, 2],
-				update: Update.once,
-				get:() => {
-					let c = Duet.canvas;
-					return [c.width, c.height];
-				}
-			},
-			drawsprite: {
-				type: Type.function,
-				args: ['image', [Type.real, 2], Type.real],
-				requiredArgs: 2,
-				return: Type.void,
-				sv: (image, positions, angles = [0]) => {
-					//console.log('Drawing:', image, pos, [image.width, image.height]);
-					let cw = image.width/2;
-					let ch = image.height/2;
-
-					for(let i = 0; i < positions.length; i++) {
-						let pos = positions[i];
-						let angle = angles[i % angles.length];
-						Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
-						Duet.draw2d.rotate(angle);
-						Duet.draw2d.drawImage(image, -cw, -ch);
-					}
-				},
-				ss: (image, pos, angle = 0) => {
-					let cw = image.width/2;
-					let ch = image.height/2;
-					Duet.draw2d.setTransform(1, 0, 0, 1, pos[0] - cw, pos[1] - ch);
-					Duet.draw2d.rotate(angle);
-					Duet.draw2d.drawImage(image, -cw, -ch);
-				},
-				sss: (i, p, a) =>
-					Duet.platform.canvas.drawsprite.ss(i, p, a),
-				ssv: (i, p, as) =>
-					as.map(a => Duet.platform.canvas.drawsprite.sss(i, p, a)),
-				svs: (i, ps, a) =>
-					Duet.platform.canvas.drawsprite.sv(i, ps, [a]),
-				svv: (i, ps, as) =>
-					Duet.platform.canvas.drawsprite.sv(i, ps, as)
-			},
-			drawtext: {
-				type: Type.function,
-				args: [Type.string, [Type.real, 2], Type.real],
-				requiredArgs: 2,
-				return: Type.void,
-				vv: (text, positions, angles = [0]) => {
-					for(let i = 0; i < positions.length; i++) {
-						let pos = positions[i];
-						let angle = angles[i % angles.length];
-						Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
-						Duet.draw2d.rotate(angle);
-						Duet.draw2d.fillText(text[i],0,0);
-					}
-				},
-				sv: (text, positions, angles = [0]) => {
-					for(let i = 0; i < positions.length; i++) {
-						let pos = positions[i];
-						let angle = angles[i % angles.length];
-						Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
-						Duet.draw2d.rotate(angle);
-						Duet.draw2d.fillText(text,0,0);
-					}
-				},
-				ss: (text, pos, angle = 0) => {
-					Duet.draw2d.setTransform(1, 0, 0, 1, pos[0], pos[1]);
-					Duet.draw2d.rotate(angle);
-					Duet.draw2d.fillText(text,0,0);
-				},
-				svv:(t,p,a) => Duet.platform.canvas.drawtext.vv(t,p,a),
-				svv:(t,p,a) => Duet.platform.canvas.drawtext.sv(t,p,a),
-				sss:(t,p,a) => Duet.platform.canvas.drawtext.ss(t,p,a),
-			},
-		},
 		paused: {
 			type: Type.boolean,
 			update: Update.variable,
 			value: false
+		},
+		pi: {
+			type: Type.real,
+			update: Update.once,
+			get:() => Math.PI
 		},
 		time: {
 			frame: {
@@ -437,86 +510,15 @@ const Duet = {
 				value: 16
 			},
 		},
-		file: {
-			sprites: {},
-			loadsprite: {
-				type: Type.function,
-				async: true,
-				update: Update.once,
-				args: [Type.string],
-				return: 'image',
-				s: (path) => {
-					if(path in Duet.platform.file.sprites) {
-						return Duet.platform.file.sprites[path];
-					} 
-					let result = new Promise((resolve, reject) => {
-						const img = new Image();
-						img.crossOrigin = 'anonymous';
-						img.onload = () => {
-							console.log('Image Loaded:', path);
-							document.getElementById('loaded-images').appendChild(img);
-							Duet.platform.file.sprites[path] = img;
-							img.alt = `Loaded sprite: ${path}`;
-							img.title = `Loaded sprite: ${path}`;
-							resolve(img);
-						}
-						img.onerror = () => {
-							Duet.logError('Failed to load image: ', path);
-							delete Duet.platform.file.sprites[path];
-							reject();
-						}
-						img.src = path;
-					});
-					Duet.platform.file.sprites[path] = result;
-					return result;
-				}
-			},
-		},
-		input: {
-			pause: {
-				type: Type.real,
-				update: Update.frame,
-				value: 0
-			},
-			right: {
-				type: Type.real,
-				update: Update.frame,
-				value: 0
-			},
-			left: {
-				type: Type.real,
-				update: Update.frame,
-				value: 0
-			},
-			up: {
-				type: Type.real,
-				update: Update.frame,
-				value: 0
-			},
-			down: {
-				type: Type.real,
-				update: Update.frame,
-				value: 0
-			},
-			mouse: {
-				type: [Type.real, 2],
-				update: Update.frame,
-				value: [0,0]
-			},
-			click: {
-				left: {type: Type.real, update: Update.frame, value: 0},
-				right: {type: Type.real, update: Update.frame, value: 0}
-			}
-		}
 	},
 	create: (typename, count = 1, refer = false, init = false) => {
-		console.log(`Creating ${count} instances of: ${typename}`);
+		//console.log(`Creating ${count} instances of: ${typename}`);
 		if(!(typename in Duet.entities)) {
 			Duet.logError('No such entity type: ' + typename);
 			return -1;
 		}
 		let et = Duet.entities[typename];
-		let startId = et.count + et.toCreate.plain - et.toFree;
+		let startId = et.count + et.toCreate.plain - et.toDelete;
 		if(init) {
 			et.toCreate.special.push({count: count, values: init});
 		}
@@ -685,6 +687,23 @@ const Duet = {
 			stack.push(result);
 			break;
 		}
+		case VM.delete: {
+			if(!indexed) {
+				Duet.logError(`Trying to delete every instance of ${typename}`);
+				break;
+			}
+			for(let i of indexed) {
+				let type = Duet.entities[typename];
+				let lastGood = type.count - type.toDelete - 1;
+				if(lastGood <= i) continue;
+				// Swap all unique values to the end
+				for(let varname of type.unique) {
+					type.values[varname][i] = type.values[varname][lastGood];
+				}
+				type.toDelete += 1;
+			}
+			break;
+		}
 		default:
 			Duet.logError(`Not an implemented instruction: ${VMNames[instr]}(code ${instr})`);
 			return false;
@@ -796,7 +815,10 @@ const Duet = {
 				}
 			}
 
-			type.count -= type.toFree;
+			if(type.toDelete) {
+				console.log(`Deleting ${type.toDelete} instances of ${typename}`);
+			}
+			type.count -= type.toDelete;
 			function createVars(inc, specialInit = null) {
 				function initialize(varname, init) {
 					if(init === undefined) {
@@ -842,7 +864,12 @@ const Duet = {
 			if(type.toCreate.plain) {
 				createVars(type.toCreate.plain);
 			}
-			type.toFree = 0;
+			if(type.toCreate.plain || type.toCreate.special || type.toDelete) {
+				for(let varname of type.unique) {
+					type.values[varname].length = type.count;
+				}
+			}
+			type.toDelete = 0;
 			type.toCreate.plain = 0;
 			type.toCreate.special = [];
 
@@ -1895,6 +1922,7 @@ const Duet = {
 		let analysis = {
 			entities: {}
 		};
+		let checked = [];
 
 		for(let f in Duet.files) {
 			analysis[f] = Duet.analyze(f);
@@ -1902,8 +1930,22 @@ const Duet = {
 			analysis.entities[e] = f;
 		}
 
-		for(let f in Duet.files){
+		function checkFile(f) {
+			// Already checked
+			if(checked.includes(f)){
+				return;
+			}
+			checked.push(f);
+			console.log('Checking', f);
+			for(let dep of analysis[f].dependentEntities) {
+				let depfile = analysis.entities[dep];
+				if(f == depfile) {
+					continue;
+				}
+				checkFile(depfile);
+			}
 			Duet.typeCheck(f, analysis);
+			console.log('Checked', f);
 
 			let errors = analysis[f].errors;
 			Duet.logParseErrors(Duet.files[f], errors);
@@ -1921,6 +1963,10 @@ const Duet = {
 				if(Duet.program) Duet.logError(`Only one program can exist. Found '${Duet.program}' and '${f}'`);
 				else Duet.program = typeName;
 			}
+		}
+
+		for(let f in Duet.files){
+			checkFile(f);
 		}
 		if(!Duet.program) {
 			Duet.logError(`There must be one script marked as 'program' to start a game.`);
@@ -1942,19 +1988,20 @@ const Duet = {
 				plain: 0,
 				special: []
 			},
-			toFree: 0,
+			toDelete: 0,
 			compute: {
 				allocation: [],
 				creation: [],
 				frame: [],
 			},
+			unique: [],
 			values: {},
 			events: {},
 			references: [],
 			freelist: []
 		};
 		let errors = [];
-		let dependencies = [];
+		let dependentEntities = [];
 		let variables = {};
 		let events = {};
 
@@ -2078,7 +2125,7 @@ const Duet = {
 					[
 						[VM.constant, etype],
 						[VM.constant, 1],
-						[VM.constant, true],
+						[VM.constant, false],
 						[VM.call, Duet.create, 3]
 					]
 				);
@@ -2108,7 +2155,7 @@ const Duet = {
 					children
 				);
 				r.ctorSpecial = init;
-				dependencies.push(etype);
+				dependentEntities.push(etype);
 
 				return r;
 			}
@@ -2129,7 +2176,7 @@ const Duet = {
 					}
 					else {
 						// Dependency on another entity
-						dependencies.push(ac.text);
+						dependentEntities.push(ac.text[0]);
 						return defaultCode(
 							acNode,
 							Type.unknown,
@@ -2183,28 +2230,41 @@ const Duet = {
 			}
 		}
 		const specialForms = {
-			unique: 1
+			unique: 1,
+			delete: 0
 		};
 		function specialForm(kind, expNode) {
-			let args = expNode.children[1];
-			if(args.type != Duet.ParseNode.valueList) {
-				err(`Expected a list of arguments for the function ${name.text.join('.')}`, expNode);
-				return defaultCode(expNode);
-			}
-			if(args.children.length != specialForms[kind]) {
-				err(`Special function '${kind}' expected ${specialForms[kind]} arguments, but received ${args.children.length}`, args);
-				if(!args.children.length) {
+			let args;
+			if(expNode.children.length > 1) {
+				args = expNode.children[1];
+				if(args.type != Duet.ParseNode.valueList) {
+					err(`Expected a list of arguments for the function ${name.text.join('.')}`, expNode);
 					return defaultCode(expNode);
 				}
+				if(args.children.length != specialForms[kind]) {
+					err(`Special function '${kind}' expected ${specialForms[kind]} arguments, but received ${args.children.length}`, args);
+					if(!args.children.length) {
+						return defaultCode(expNode);
+					}
+				}
 			}
+			else if(specialForms[kind] > 0) {
+				err(`Expected ${specialForms[kind]} arguments for special function ${kind}`, expNode);
+			}
+
 			if(kind == 'unique') {
 				let exp = analyzeExp(args.children[0]);
 				exp.storage = Storage.unique;
 				return exp;
 			}
+			else if(kind == 'delete') {
+				let d = defaultCode(expNode, Type.void, [VM.delete]);
+				d.storage = Storage.unique;
+				return d;
+			}
 			else {
 				err(`Unknown special function: '${kind}'`, expNode.children[0]);
-				return analyzeExp(args.children[0]);
+				return args? analyzeExp(args.children[0]) : defaultCode();
 			}
 		}
 		/* A dictionary
@@ -2443,7 +2503,7 @@ const Duet = {
 		return {
 			entity:entity, 
 			errors:errors, 
-			dependencies: dependencies, 
+			dependentEntities: dependentEntities, 
 			variables: variables, 
 			events: events,
 			lowText: lowText
@@ -2664,7 +2724,7 @@ const Duet = {
 				code = [
 					VM.constant, typename,
 					VM.constant, 1,
-					VM.constant, true,
+					VM.constant, false,
 					VM.constant, {}
 				];
 				let einfo = analysis[analysis.entities[typename]];
@@ -2797,6 +2857,9 @@ const Duet = {
 			}
 
 			entity.values[varname] = varNode.storage == Storage.unique? [] : Duet.initVal(varNode.type);
+			if(varNode.storage == Storage.unique) {
+				entity.unique.push(varname);
+			}
 			if(varNode.update == Update.once) {
 				if(varNode.storage == Storage.unique){
 					entity.compute.creation.push([varname, varNode.code]);

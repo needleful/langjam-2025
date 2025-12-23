@@ -7,7 +7,13 @@ speed = 20.0
 direction = unique([1, 0])
 position = canvas.size/2; position+direction*speed
 
+framesAlive = unique(0); framesAlive + 1
+expire = floor(framesAlive/200)
+
 frame = time.frame
 
 frame
 	canvas.drawsprite(sprite, position, opv.angle2(direction) + pi/2)
+
+expire
+	delete
