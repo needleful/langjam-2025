@@ -1692,7 +1692,8 @@ const Duet = {
 				latest = exp;
 			}
 			while(isGood()) {
-				if(grab(Duet.Token.operator)) {
+				let next;
+				if(next = grab(Duet.Token.operator)) {
 					parseError(`Extra operator: [${tkText(next)}]`, 1, -1);
 				}
 				let s = tk;
