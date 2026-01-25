@@ -32,6 +32,7 @@ framesPerBullet = 5.0
 firing = 0; input.click.left*(firing + 1)/framesPerBullet
 fire = ceil(firing)
 aim = input.mouse - position
+radius = 10
 
 
 # The other oddity of Duet is all other code execution is done through listeners.
@@ -42,6 +43,7 @@ aim = input.mouse - position
 frame
 	canvas.drawSprite(sprite, position, opv.angle2(aim) + pi/2)
 	canvas.drawSprite(crosshair, input.mouse)
+	canvas.drawCircle(radius, position)
 
 fire
 	bullet.create(direction = opv.normalize(aim), position = position)

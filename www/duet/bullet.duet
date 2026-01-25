@@ -7,7 +7,7 @@ speed = 20.0
 direction = unique([1, 0])
 position = canvas.size/2; position+direction*speed
 
-radius = 50
+radius = 20
 framesAlive = unique(0); framesAlive + 1
 expire = framesAlive > 200 | opv.any(position < [0,0]-canvas.size/2 | position > 1.5*canvas.size)
 
@@ -15,6 +15,7 @@ frame = time.frame
 
 frame
 	canvas.drawsprite(sprite, position, opv.angle2(direction) + pi/2)
+	canvas.drawCircle(radius, position)
 
 expire
 	delete

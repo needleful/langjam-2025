@@ -21,7 +21,8 @@ const Type = {
 	entity: 6,
 	program: 7,
 	unknown: 8,
-	void: 9
+	void: 9,
+	invalid: 10
 };
 
 let TypeNames = {};
@@ -295,6 +296,30 @@ const Duet = {
 				svv: (i, ps, as) =>
 					Duet.platform.canvas.drawsprite.sv(i, ps, as)
 			},
+			drawcircle: {
+				type: Type.function,
+				args: [Type.real, [Type.real, 2]],
+				return: Type.void,
+				vv: (radii, positions) => {
+					Duet.draw2d.setTransform(1, 0, 0, 1, 0, 0);
+					let lr = radii.length;
+					let lp = positions.length;
+					if(!lr || !lp) {
+						return;
+					}
+					let m = Math.max(lr, lp);
+					for(let i = 0; i < m; i ++) {
+						Duet.draw2d.beginPath();
+						let [x, y] = positions[i % lp];
+						let r = radii[i % lr];
+						Duet.draw2d.arc(x, y, r, 0, 2*Math.PI);
+						Duet.draw2d.stroke();
+					}
+				},
+				vs: (r, p) => Duet.platform.canvas.drawcircle.vv(r, [p]),
+				sv: (r, p) => Duet.platform.canvas.drawcircle.vv([r], p),
+				ss: (r, p) => Duet.platform.canvas.drawcircle.vv([r], [p]),
+			},
 			drawtext: {
 				type: Type.function,
 				args: [Type.string, [Type.real, 2], Type.real],
@@ -326,6 +351,43 @@ const Duet = {
 				svv:(t,p,a) => Duet.platform.canvas.drawtext.vv(t,p,a),
 				svv:(t,p,a) => Duet.platform.canvas.drawtext.sv(t,p,a),
 				sss:(t,p,a) => Duet.platform.canvas.drawtext.ss(t,p,a),
+			},
+		},
+		physics: {
+			colliding: {
+				type: Type.function,
+				args: [Type.real, [Type.real, 2], Type.real, [Type.real, 2]],
+				return: Type.real,
+				ssss: (r1, p1, r2, p2) => {
+					let dx = p1[0] - p2[0];
+					let dy = p1[1] - p2[1];
+					let dist = Math.sqrt(dx*dx + dy*dy);
+					return Number(dist < r1 + r2);
+				},
+				svss: (r1, ps1, r2, p2) => {
+					return Duet.platform.physics.colliding.svsv(r1, ps1, r2, [p2]);
+				},
+				sssv: (r1, p1, r2, ps2) => {
+					return Duet.platform.physics.colliding.svsv(r1, [p1], r2, ps2);
+				},
+				svsv: (r1, ps1, r2, ps2) => {
+					let r = [];
+					if(!ps1.length || !ps2.length) {
+						return r;
+					}
+					r.length = ps1.length;
+					for(let i1 = 0; i1 < ps1.length; i1++) {
+						for(let i2 = 0; i2 < ps2.length; i2++) {
+							r[i1] = Duet.platform.physics.colliding.ssss(
+								r1, ps1[i1], r2, ps2[i2]
+							);
+							if(r[i1]) {
+								break;
+							}
+						}
+					}
+					return r;
+				},
 			},
 		},
 		file: {
@@ -600,6 +662,9 @@ const Duet = {
 	},
 	release: (e) => {
 		Duet._keySet(e.code, 0);
+	},
+	click: (e) => {
+		Duet.checkMouse(e);
 	},
 	_keySet: (code, val) => {
 		switch(code) {
@@ -2653,6 +2718,11 @@ const Duet = {
 						let entityInfo = analysis[analysis.entities[typename]];
 						let realType = Type.unknown;
 						let rootValue = entityInfo.variables[id[1]];
+						if(!rootValue) {
+							err(`No such variable on type '${id[0]}': ${id[1]}`, node.parseNode);
+							node.type = Type.invalid;
+							return node;
+						}
 						// This is based on the storage of the root value.
 						// Note that the 'update' is from the leaf value.
 						node.storage = Math.max(node.storage, rootValue.storage);
@@ -2745,7 +2815,7 @@ const Duet = {
 					let c = node.children[i];
 					let expType = funcRef.args[i];
 					if(!Duet.unify(expType, c.type)) {
-						err(`Function ${funcName}: Expected argument ${i} to be of type ${Duet.readableType(expType)}. Received ${Duet.readableType(c.type)}`, node.parseNode);
+						err(`Function ${funcName}: Expected argument ${i} to be of type ${Duet.readableType(expType)}. Received type: ${Duet.readableType(c.type)}`, node.parseNode);
 					}
 					subType += (c.storage == Storage.unique) ? 'v' : 's';
 					code = code.concat(c.code);
