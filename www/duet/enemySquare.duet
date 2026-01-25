@@ -6,7 +6,10 @@ movement = opv.normalize(game.myplayer.position - position)
 position = unique([0,0]); position + movement*speed
 frame = time.frame
 framesAlive = unique(0); framesAlive + 1
+radius = 30
 expire = framesAlive > 600
+	| physics.circleColliding(radius, position, bullet.radius, bullet.position)
+	| physics.circleColliding(radius, position, player.radius, player.position)
 
 frame
 	canvas.drawSprite(sprite, position)

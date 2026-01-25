@@ -1060,12 +1060,15 @@ const Duet = {
 		let item = makeChild(
 			document.getElementById('files-list'),
 			'li', {class: 'files-list-item'});
-		let button = makeChild(item, 'button');
+		let button = makeChild(item, 'button', {class:'tab-button'});
 		button.innerText = id;
 		button.addEventListener('click', () => {Duet.switchTo(id)});
-		info.element = button;
+		let close = makeChild(item, 'button', {class:'close-button'});
+		close.addEventListener('click', () => {Duet.removeObject(id)});
+		makeChild(close, 'img', {src:'img/icon_close.svg', class: 'icon-small'});
+		info.element = item;
+		info.path = id;
 		Duet.files[id] = info;
-		Duet.files[id].path = id;
 		if(p_switch) {
 			Duet.switchTo(id);
 		}
@@ -1351,7 +1354,7 @@ const Duet = {
 			){
 				continue;
 			}
-			else {
+			else if(isGood()) {
 				addToken(Duet.Token.invalid, 1);
 				Duet.logError('Invalid token: ', text.substr(c, 5));
 			}
@@ -1700,6 +1703,9 @@ const Duet = {
 				let val = value();
 				if(!val) {
 					let len = tk-s;
+					if(!len) {
+						return exp;
+					}
 					val = parseError(`Expected a value`, len, -len);
 				}
 				if(!latest) {
@@ -1739,6 +1745,8 @@ const Duet = {
 						insert(parent, grow(newExp));
 						newExp.children = [opNode, right]
 					}
+					// Continue past the newline when a line ends with an operator
+					skipIgnored(true);
 				}
 				else {
 					break;

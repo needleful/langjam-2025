@@ -17,6 +17,7 @@ m3
 	- Fire bullets
 		p1
 		i51
+		x
 	- Collision detection
 		p1
 		i52
@@ -210,6 +211,7 @@ m3
 	- WASD support
 		p1
 		i45
+		x
 	- Bigger pause button
 		p1
 		i46
