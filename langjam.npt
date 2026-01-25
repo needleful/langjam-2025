@@ -21,12 +21,15 @@ m3
 	- Collision detection
 		p1
 		i52
+		x
 		- Just circles
 			p1
 			i53
+			x
 		- Layers and masks
 			p1
 			i54
+			x
 - The Language
 	p1
 	i2
@@ -79,15 +82,13 @@ m3
 		- Destroy objects
 			p1
 			i59
+			x
 		- Destroying a local entity that's referenced should be an error
 			p1
 			i124
 	- Receive messages
 		p1
 		i36
-		- Score
-			p1
-			i56
 		- Player damage
 			p1
 			i57
@@ -95,6 +96,9 @@ m3
 			/max_health = 100.0
 			/damage = receive(real)
 			/health = max_health - damage
+		- Score
+			p1
+			i56
 	- Conditional events
 		p1
 		i60
