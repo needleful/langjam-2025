@@ -348,6 +348,9 @@ const Duet = {
 					Duet.draw2d.rotate(angle);
 					Duet.draw2d.fillText(text,0,0);
 				},
+				vs: (t,p) => Duet.platform.canvas.drawtext.vv(t,[p]),
+				vss: (t,p,a) => Duet.platform.canvas.drawtext.vv(t,[p],[a]),
+				vsv: (t,p,a) => Duet.platform.canvas.drawtext.vv(t,[p],a),
 				svv:(t,p,a) => Duet.platform.canvas.drawtext.vv(t,p,a),
 				svv:(t,p,a) => Duet.platform.canvas.drawtext.sv(t,p,a),
 				sss:(t,p,a) => Duet.platform.canvas.drawtext.ss(t,p,a),
@@ -663,9 +666,6 @@ const Duet = {
 	release: (e) => {
 		Duet._keySet(e.code, 0);
 	},
-	click: (e) => {
-		Duet.checkMouse(e);
-	},
 	_keySet: (code, val) => {
 		switch(code) {
 		case 'ArrowUp':
@@ -884,7 +884,8 @@ const Duet = {
 		// Default events
 		Duet.canvas.onkeydown = Duet.press;
 		Duet.canvas.onkeyup = Duet.release;
-		Duet.canvas.onclick = Duet.click;
+		Duet.canvas.onmousedown = Duet.checkMouse;
+		Duet.canvas.onmouseup = Duet.checkMouse;
 
 		// Creation of the program and loading entity types
 		for(let type in Duet.entities) {
@@ -2346,9 +2347,11 @@ const Duet = {
 				return defaultCode(acNode);
 			}
 		}
+		// Function name to required number of arguments
 		const specialForms = {
+			delete: 0,
 			unique: 1,
-			delete: 0
+			receive: 1,
 		};
 		function specialForm(kind, expNode) {
 			let args;
@@ -2370,6 +2373,12 @@ const Duet = {
 			}
 
 			if(kind == 'unique') {
+				let exp = analyzeExp(args.children[0]);
+				exp.storage = Storage.unique;
+				return exp;
+			}
+			// TODO: Annotations for message-based variables
+			else if(kind == 'receive') {
 				let exp = analyzeExp(args.children[0]);
 				exp.storage = Storage.unique;
 				return exp;

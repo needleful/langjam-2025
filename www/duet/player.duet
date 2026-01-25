@@ -34,6 +34,9 @@ fire = ceil(firing)
 aim = input.mouse - position
 radius = 10
 
+health = receive(100)
+alive = health > 0
+
 
 # The other oddity of Duet is all other code execution is done through listeners.
 # Here, we're running this code whenever `frame` changes.
@@ -43,10 +46,13 @@ radius = 10
 frame
 	canvas.drawSprite(sprite, position, opv.angle2(aim) + pi/2)
 	canvas.drawSprite(crosshair, input.mouse)
-	canvas.drawCircle(radius, position)
+	canvas.drawtext(tostring(health), position + [10, 10])
 
 fire
 	bullet.create(direction = opv.normalize(aim), position = position)
+
+alive
+	delete
 
 #firing
 #	canvas.drawtext(tostring(firing), position + [10, 10])

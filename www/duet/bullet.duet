@@ -15,7 +15,6 @@ frame = time.frame
 
 frame
 	canvas.drawsprite(sprite, position, opv.angle2(direction) + pi/2)
-	canvas.drawCircle(radius, position)
 
 expire
 	delete
