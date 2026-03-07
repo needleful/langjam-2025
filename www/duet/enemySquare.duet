@@ -14,8 +14,8 @@ expire = framesAlive > 2 & ( framesAlive > 600 | attack | physics.colliding(radi
 frame
 	canvas.drawSprite(sprite, position)
 
-#attack
-#	game.myplayer.health -= 10
+attack
+	game.myplayer.health = game.myplayer.health - 10
 
 expire
 	delete

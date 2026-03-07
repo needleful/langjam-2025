@@ -1823,20 +1823,11 @@ const Duet = {
 		}
 
 		function message() {
-			let node = newNode(Duet.ParseNode.funCall);
-			let name = accessor();
-			if(!name) {
+			let msg = expression();
+			if(!msg) {
 				return false;
 			}
-			node.children.push(name);
-			if(grab(Duet.Token.parenStart)) {
-				let args = valueList(Duet.Token.parenEnd);
-				if(!grab(Duet.Token.parenEnd)) {
-					parseError('Missing an ending parenthesis ")" after arguments', 1, -1);
-				}
-				node.children.push(args);
-			}
-			return grow(node);
+			return grow(msg);
 		}
 
 		function isOpEx(ex, text) {
@@ -1961,7 +1952,12 @@ const Duet = {
 		}
 		let rt = 'unknown';
 		if(Array.isArray(type)) {
-			rt = `array(${[TypeNames[type[0]]].concat(type.slice(1))})`;
+			if(type[0] == Type.entity) {
+				rt = `${type[1]} (entity)`;
+			}
+			else {
+				rt = `array(${[TypeNames[type[0]]].concat(type.slice(1))})`;
+			}
 		}
 		else if(type in TypeNames) {
 			rt = TypeNames[type];
@@ -2377,10 +2373,13 @@ const Duet = {
 				exp.storage = Storage.unique;
 				return exp;
 			}
-			// TODO: Annotations for message-based variables
 			else if(kind == 'receive') {
 				let exp = analyzeExp(args.children[0]);
 				exp.storage = Storage.unique;
+				if(exp.update > Update.once) {
+					err(`The initial value for the special function {receive} should be updated once.`, expNode.children[0]);
+				}
+				exp.update = Math.max(exp.update, Update.message);
 				return exp;
 			}
 			else if(kind == 'delete') {
@@ -2405,9 +2404,12 @@ const Duet = {
 			}
 			switch(expNode.type) {
 			case Duet.ParseNode.accessor: {
-				// Special case of creating nodes
-				let c = resolveAccessor(expNode);
-				return accessorCode(expNode, c);
+				let ac = resolveAccessor(expNode);
+				// A zero-argument special function (probably `delete`)
+				if(ac.text.length == 1 && ac.text[0] in specialForms) {
+					return specialForm(ac.text[0], expNode);
+				}
+				return accessorCode(expNode, ac);
 			}
 			case Duet.ParseNode.index: {
 				return {
@@ -2609,7 +2611,7 @@ const Duet = {
 				}
 			}
 			else if(node.type == Duet.ParseNode.event) {
-				//console.log("Event:", Duet.printableTree(file, node));
+				console.log("Event:", Duet.printableTree(file, node));
 				let cond = node.children[0];
 				if(cond.type != Duet.ParseNode.accessor || cond.children.length > 1) {
 					err(`Advanced conditions not implemented yet`, cond);
@@ -2999,7 +3001,7 @@ const Duet = {
 			if(varNode.storage == Storage.unique) {
 				entity.unique.push(varname);
 			}
-			if(varNode.update == Update.once) {
+			if(varNode.update == Update.once || varNode.update == Update.message) {
 				if(varNode.storage == Storage.unique){
 					entity.compute.creation.push([varname, varNode.code]);
 				} 
@@ -3022,6 +3024,9 @@ const Duet = {
 				}
 			}
 		}
+		function isEntityType(type) {
+			return Array.isArray(type) && type[0] == Type.entity;
+		}
 		for(let eventName in events) {
 			let eventCode = [];
 			if(!(eventName in variables)) {
@@ -3034,6 +3039,9 @@ const Duet = {
 			for(let i = 0; i < events[eventName].length; i++) {
 				let line = events[eventName][i];
 				checkExp(eventName, line);
+				if(line.type != Type.void && !isEntityType(line.type)) {
+					err(`Event messages should be void functions, found a function of type ${Duet.readableType(line.type)}`, line.parseNode);
+				}
 				eventCode = eventCode.concat(line.code);
 			}
 			entity.events[eventName] = {do: eventCode, storage: eventStorage};
