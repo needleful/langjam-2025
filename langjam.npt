@@ -119,6 +119,9 @@ m3
 			p1
 			i171
 			x
+		- Variables update when a dependent message variable is updated
+			p1
+			i172
 	- Conditional events
 		p1
 		i60
@@ -227,6 +230,9 @@ m3
 		p1
 		i125
 		/Dependency ordering?
+	- Something is wrong with collision. Squares disappear until I shoot for the first time
+		p1
+		i173
 - Game
 	p1
 	i42

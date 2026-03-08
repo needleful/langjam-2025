@@ -9,7 +9,8 @@ framesAlive = unique(0); framesAlive + 1
 radius = 15
 
 attack = 0; physics.colliding(radius, position, player.radius, player.position)
-expire = framesAlive > 2 & ( framesAlive > 600 | attack | physics.colliding(radius, position, bullet.radius, bullet.position))
+shot = 0; physics.colliding(radius, position, bullet.radius, bullet.position)
+expire = 0; framesAlive > 2 & ( framesAlive > 600 | attack | shot)
 
 frame
 	canvas.drawSprite(sprite, position)
