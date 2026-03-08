@@ -31,7 +31,6 @@ const Update = {
 	once: 0,
 	variable: 1,
 	frame: 2,
-	message: 3,
 };
 
 let UpdateNames = {};
@@ -2178,6 +2177,7 @@ const Duet = {
 				allocation: [],
 				creation: [],
 				frame: [],
+				message: {}
 			},
 			unique: [],
 			values: {},
@@ -2205,7 +2205,8 @@ const Duet = {
 				storage: Storage.shared,
 				code: code,
 				children: children,
-				dependencies: dependencies
+				dependencies: dependencies,
+				receiver: false
 			}
 		}
 
@@ -2455,9 +2456,9 @@ const Duet = {
 				let exp = analyzeExp(args.children[0]);
 				exp.storage = Storage.unique;
 				if(exp.update > Update.once) {
-					err(`The initial value for the special function {receive} should be updated once.`, expNode.children[0]);
+					err(`The initial value for the special function {receive} should be constant.`, expNode.children[0]);
 				}
-				exp.update = Math.max(exp.update, Update.message);
+				exp.receiver = true;
 				return exp;
 			}
 			else if(kind == 'delete') {
@@ -2619,8 +2620,8 @@ const Duet = {
 					return {
 						parseNode: expNode,
 						type: Type.void,
-						update: Update.message,
-						storage: Storage.shared,
+						update: val.update,
+						storage: val.storage,
 						children: [],
 						code: [VM.message, accessorReference(ac), analyzeExp(val)]
 					}
@@ -2802,7 +2803,7 @@ const Duet = {
 				if(node.code[0] == VM.message) {
 					let ref = checkExp(varname, node.code[1]);
 					let val = checkExp(varname, node.code[2]);
-					if(ref.update != Update.message) {
+					if(ref.receiver) {
 						err(`Variable cannot receive messages.`, ref.parseNode);
 					}
 					if(ref.type != val.type) {
@@ -3114,7 +3115,7 @@ const Duet = {
 			if(varNode.storage == Storage.unique) {
 				entity.unique.push(varname);
 			}
-			if(varNode.update == Update.once || varNode.update == Update.message) {
+			if(varNode.update == Update.once) {
 				if(varNode.storage == Storage.unique){
 					entity.compute.creation.push([varname, varNode.code]);
 				} 

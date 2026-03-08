@@ -42,6 +42,9 @@ m3
 		- Skull
 			p1
 			i169
+	- Reset game when player health reaches zero
+		p1
+		i56
 - The Language
 	p1
 	i2
@@ -104,13 +107,18 @@ m3
 		- Player damage
 			p1
 			i57
+			x
 			/entity player
 			/max_health = 100.0
 			/damage = receive(real)
 			/health = max_health - damage
-		- Score
+		- Events with messaged variables
 			p1
-			i56
+			i170
+		- Ability to have both message and frame
+			p1
+			i171
+			x
 	- Conditional events
 		p1
 		i60

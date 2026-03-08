@@ -35,22 +35,17 @@ aim = input.mouse - position
 radius = 10
 
 health = receive(100)
-invincibleTime = receive(100)
+invincibleTime = receive(100); invincibleTime - 1
 takeDamage = invincibleTime <= 0
 alive = health > 0
 
-
 # The other oddity of Duet is all other code execution is done through listeners.
 # Here, we're running this code whenever `frame` changes.
-# I would have the listener on `time.frame` directly, but I couldn't
-# be bothered to implement listeners for non-local variables.
-# Maybe for a 2-week jam.
 frame
 	canvas.drawSprite(sprite, position, opv.angle2(aim) + pi/2)
 	canvas.drawSprite(crosshair, input.mouse)
 	canvas.drawtext(tostring(health), position + [10, 10])
 	canvas.drawtext(tostring(invincibleTime), position + [10, 30])
-	invincibleTime = invincibleTime - 1
 
 health
 	invincibleTime = 100
@@ -60,7 +55,3 @@ fire
 
 alive
 	delete
-
-#firing
-#	canvas.drawtext(tostring(firing), position + [10, 10])
-#	canvas.drawtext(tostring(fire), position + [10, 30])
