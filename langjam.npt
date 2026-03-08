@@ -30,6 +30,18 @@ m3
 			p1
 			i54
 			x
+	- Other Enemies
+		p1
+		i166
+		- Circle
+			p1
+			i167
+		- Triangle
+			p1
+			i168
+		- Skull
+			p1
+			i169
 - The Language
 	p1
 	i2
@@ -111,6 +123,7 @@ m3
 	- Figure out events for when values change
 		p1
 		i21
+		x
 		/For example:
 		/spawned_enemies = floor(time.seconds/seconds_per_enemy)
 		/
@@ -119,13 +132,13 @@ m3
 			p1
 			i63
 			x
-		- Add trails
-			p1
-			i64
 		- Player fire rate
 			p1
 			i65
 			x
+	- Add trails
+		p1
+		i64
 	- Listen to values from the platform
 		p1
 		i30
@@ -225,3 +238,6 @@ m3
 	- Crosshair is not centered
 		p1
 		i50
+	- Bullets don't come out of front of player
+		p1
+		i165

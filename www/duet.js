@@ -30,8 +30,8 @@ let TypeNames = {};
 const Update = {
 	once: 0,
 	variable: 1,
-	message: 2,
-	frame: 3,
+	frame: 2,
+	message: 3,
 };
 
 let UpdateNames = {};
@@ -53,6 +53,7 @@ const VM = {
 	nonlocal: 6,
 	localShared: 7,
 	delete: 8,
+	message: 9,
 };
 
 let VMNames = {};
@@ -67,6 +68,7 @@ const VMLength = {
 	[[VM.array]]: 2,
 	[[VM.read]]: 2,
 	[[VM.delete]]: 1,
+	[[VM.message]]: 3,
 };
 
 const opCore = {
@@ -656,6 +658,10 @@ const Duet = {
 			return startId;
 		}
 	},
+	Message: {
+		event: 0,
+		assign: 1
+	},
 
 	// Set once per script
 	entities: {},
@@ -810,6 +816,10 @@ const Duet = {
 			}
 			break;
 		}
+		case VM.message: {
+			Duet.messages.push({type: Duet.Message.assign, ent: typename, ref: arg(1), code: arg(2)});
+			break;
+		}
 		default:
 			Duet.logError(`Not an implemented instruction: ${VMNames[instr]}(code ${instr})`);
 			return false;
@@ -878,6 +888,61 @@ const Duet = {
 		}
 	},
 
+	doMessage : (msg) => {
+		function resolveRef(type, code) {
+			switch(code[0]) {
+			case VM.localShared: //fallthrough
+			case VM.localUnique:
+				return {
+					source: Duet.entities[type],
+					index: code[1],
+					subIndex: null
+				};
+			case VM.nonlocal:
+				let ac = code[1];
+				let ent;
+				let varname;
+				let subIndex = null;
+				for(let i = 0; i < ac.length; i += 2) {
+					ent = ac[i];
+					varname = ac[i+1];
+					if(i < ac.length - 2) {
+						subIndex = Duet.entities[ent].values[varname];
+					}
+				}
+				return {
+					source: Duet.entities[ent],
+					index: varname,
+					subIndex:subIndex,
+				};
+				break;
+			default:
+				Duet.logError(`Undefined reference type: ${type}`);
+			}
+		}
+		switch(msg.type) {
+		case Duet.Message.assign:
+			let ref = resolveRef(msg.ent, msg.ref);
+			let val = Duet.eval(msg.ent, msg.code, ref.subIndex);
+
+			if(ref.subIndex === null) {
+				ref.source.values[ref.index] = val;
+			}
+			if(Array.isArray(ref.subIndex)) {
+				for(let i = 0; i < ref.subIndex.length; i++) {
+					let s = ref.subIndex[i];
+					ref.source.values[ref.index][s] = val[i];
+				}
+			}
+			else {
+				ref.source.values[ref.index][ref.subIndex] = val;
+			}
+			break;
+		default:
+			Duet.logError(`Undefined message type: ${msg.type}`);
+		}
+	},
+
 	run: () => {
 		Duet.draw2d = Duet.canvas.getContext('2d');
 		Duet.draw2d.fillStyle = 'white';
@@ -889,7 +954,7 @@ const Duet = {
 
 		// Creation of the program and loading entity types
 		for(let type in Duet.entities) {
-			Duet.allocate(type)
+			Duet.allocate(type);
 		}
 		Duet.create(Duet.program);
 
@@ -900,7 +965,13 @@ const Duet = {
 		if(Duet.promises.waiting.length) {
 			await Promise.all(Duet.promises.waiting);
 		}
-		let messages = [];
+		if(Duet.messages.length) {
+			for(let i = 0; i < Duet.messages.length; i++) {
+				Duet.doMessage(Duet.messages[i]);
+			}
+			Duet.messages = [];
+		}
+		let eventMessages = [];
 		{
 			Duet.draw2d.setTransform(1,0,0,1,0,0);
 			Duet.draw2d.clearRect(0,0, Duet.canvas.width,Duet.canvas.height)
@@ -1043,13 +1114,13 @@ const Duet = {
 						}
 					}
 					if(addMessage) {
-						messages.push([typename, event.do, indexed]);
+						eventMessages.push([typename, event.do, indexed]);
 					}
 				}
 				type.values[valname] = newval;
 			}
 		}
-		for(let message of messages) {
+		for(let message of eventMessages) {
 			try{
 				Duet.eval(...message);
 			}
@@ -1058,7 +1129,7 @@ const Duet = {
 				Duet.setPaused(true);
 			}
 		}
-		messages = [];
+		eventMessages = [];
 		Duet.promises.waiting = [];
 		Duet.promises.results = [];
 
@@ -1105,7 +1176,7 @@ const Duet = {
 		}
 	},
 	loadObject: async (path) => {
-		const response = await fetch(path);
+		const response = await fetch(path, {cache: 'no-store'});
 		if(!response.ok) {
 			Duet.logError('DUET: could not load file: ', path);
 			return;
@@ -2343,6 +2414,13 @@ const Duet = {
 				return defaultCode(acNode);
 			}
 		}
+		function accessorReference(acNode) {
+			let ac = resolveAccessor(acNode);
+			if(ac.type != AcType.varName) {
+				err('Expected a normal variable.', acNode);
+			}
+			return accessorCode(acNode, ac);
+		}
 		// Function name to required number of arguments
 		const specialForms = {
 			delete: 0,
@@ -2525,13 +2603,35 @@ const Duet = {
 				if(expNode.children.length < 2 || expNode.children.length > 3) {
 					err('COMPILER BUG: operators only work with 1 or 2 values.', expNode);
 				}
+				let code = [];
+				let opText = tkText(op.start);
+				if(opText == '=') {
+					if(expNode.children.length != 3) {
+						err(`Assignment messages should be of the following form: {name} ${opText} {value}`, expNode);
+						defaultCode(expNode);
+					}
+					let ac = expNode.children[1];
+					if(ac.type != Duet.ParseNode.accessor) {
+						err(`Expected a name on the left-hand side of the assignment operator.`, ac);
+						defaultCode(expNode);
+					}
+					let val = expNode.children[2];
+					return {
+						parseNode: expNode,
+						type: Type.void,
+						update: Update.message,
+						storage: Storage.shared,
+						children: [],
+						code: [VM.message, accessorReference(ac), analyzeExp(val)]
+					}
+				}
 				return {
 					parseNode: expNode,
 					type: Type.unknown,
 					update: Update.once,
 					storage: Storage.shared,
 					children: expNode.children.slice(1).map(analyzeExp),
-					code: [VM.call, tkText(op.start), expNode.children.length - 1]
+					code: [VM.call, opText, expNode.children.length - 1]
 				}
 			}
 			default:
@@ -2699,7 +2799,19 @@ const Duet = {
 				return true;
 			}
 			if(node.children.length == 0) {
-				if(known(node.type)) {
+				if(node.code[0] == VM.message) {
+					let ref = checkExp(varname, node.code[1]);
+					let val = checkExp(varname, node.code[2]);
+					if(ref.update != Update.message) {
+						err(`Variable cannot receive messages.`, ref.parseNode);
+					}
+					if(ref.type != val.type) {
+						err(`Cannot assign {${Duet.readableType(val.type)}} value to {${Duet.readableType(ref.type)}} variable.`, node.parseNode);
+					}
+					node.code = [VM.message, ref.code, val.code];
+					node.type = Type.void;
+				}
+				else if(known(node.type)) {
 					node.code = node.code.flat(Infinity);
 				}
 				else if(node.code[0] == VM.localUnique) {
@@ -2904,6 +3016,7 @@ const Duet = {
 					unifyCtor();
 					break;
 				}
+				// fallthrough
 			case VM.callAsync:
 				unifyFunc();
 				break;

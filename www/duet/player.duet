@@ -35,6 +35,8 @@ aim = input.mouse - position
 radius = 10
 
 health = receive(100)
+invincibleTime = receive(100)
+takeDamage = invincibleTime <= 0
 alive = health > 0
 
 
@@ -47,6 +49,11 @@ frame
 	canvas.drawSprite(sprite, position, opv.angle2(aim) + pi/2)
 	canvas.drawSprite(crosshair, input.mouse)
 	canvas.drawtext(tostring(health), position + [10, 10])
+	canvas.drawtext(tostring(invincibleTime), position + [10, 30])
+	invincibleTime = invincibleTime - 1
+
+health
+	invincibleTime = 100
 
 fire
 	bullet.create(direction = opv.normalize(aim), position = position)
