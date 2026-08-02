@@ -163,6 +163,15 @@ m3
 	- Trailing newline required for comments at the end of code
 		p1
 		i122
+	- Improve Terminology
+		p1
+		i165
+		- SPMD terminology
+			p1
+			i166
+			/Unique/Static -> Uniform
+			/Batch -> Varying
+			/Separate Uniform/Varying from Scalar/Batch
 - Editor
 	p1
 	i10
