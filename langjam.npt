@@ -30,6 +30,21 @@ m3
 			p1
 			i54
 			x
+	- Other Enemies
+		p1
+		i166
+		- Circle
+			p1
+			i167
+		- Triangle
+			p1
+			i168
+		- Skull
+			p1
+			i169
+	- Reset game when player health reaches zero
+		p1
+		i56
 - The Language
 	p1
 	i2
@@ -92,13 +107,21 @@ m3
 		- Player damage
 			p1
 			i57
+			x
 			/entity player
 			/max_health = 100.0
 			/damage = receive(real)
 			/health = max_health - damage
-		- Score
+		- Events with messaged variables
 			p1
-			i56
+			i170
+		- Ability to have both message and frame
+			p1
+			i171
+			x
+		- Variables update when a dependent message variable is updated
+			p1
+			i172
 	- Conditional events
 		p1
 		i60
@@ -111,6 +134,7 @@ m3
 	- Figure out events for when values change
 		p1
 		i21
+		x
 		/For example:
 		/spawned_enemies = floor(time.seconds/seconds_per_enemy)
 		/
@@ -119,13 +143,13 @@ m3
 			p1
 			i63
 			x
-		- Add trails
-			p1
-			i64
 		- Player fire rate
 			p1
 			i65
 			x
+	- Add trails
+		p1
+		i64
 	- Listen to values from the platform
 		p1
 		i30
@@ -215,6 +239,9 @@ m3
 		p1
 		i125
 		/Dependency ordering?
+	- Something is wrong with collision. Squares disappear until I shoot for the first time
+		p1
+		i173
 - Game
 	p1
 	i42
@@ -234,3 +261,6 @@ m3
 	- Crosshair is not centered
 		p1
 		i50
+	- Bullets don't come out of front of player
+		p1
+		i165
